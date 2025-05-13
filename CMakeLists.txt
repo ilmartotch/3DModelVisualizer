@@ -5,15 +5,14 @@ set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.c
 project(MyOpenGLProject LANGUAGES CXX)
 
 # Imposta standard C++
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 
 # src/CMakeLists.txt
 add_executable(App
   src/main.cpp
-  
- "src/test.h")
+)
 
 # Trova pacchetti con vcpkg
 find_package(glfw3 CONFIG REQUIRED)

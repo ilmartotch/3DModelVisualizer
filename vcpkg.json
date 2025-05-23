@@ -4,6 +4,7 @@
   "dependencies": [
     "glfw3",
     "glad",
-    "imgui"
+    "imgui",
+    "stb"
   ]
 }

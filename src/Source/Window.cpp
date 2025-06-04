@@ -3,7 +3,7 @@
 #include <GLFW/glfw3.h>
 
 
-Window::Window()
+Window::Window() : rotationX(0.0f), rotationY(0.0f), rotationZ(0.0f), rotationSpeed(1.0f)
 {
 }
 
@@ -53,7 +53,28 @@ GLFWwindow* Window::getGLFWwindow() const
 	return m_window;
 }
 
-void processInput(GLFWwindow* window) {
-	if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-		glfwSetWindowShouldClose(window, true);
+void Window::processInput() const{
+	if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+		glfwSetWindowShouldClose(m_window, true);
+
+	// Controlli per la rotazione
+	if (glfwGetKey(m_window, GLFW_KEY_UP) == GLFW_PRESS)
+		rotationX += rotationSpeed;
+	if (glfwGetKey(m_window, GLFW_KEY_DOWN) == GLFW_PRESS)
+		rotationX -= rotationSpeed;
+	if (glfwGetKey(m_window, GLFW_KEY_LEFT) == GLFW_PRESS)
+		rotationY -= rotationSpeed;
+	if (glfwGetKey(m_window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+		rotationY += rotationSpeed;
+	if (glfwGetKey(m_window, GLFW_KEY_PAGE_UP) == GLFW_PRESS)
+		rotationZ += rotationSpeed;
+	if (glfwGetKey(m_window, GLFW_KEY_PAGE_DOWN) == GLFW_PRESS)
+		rotationZ -= rotationSpeed;
+
+	// Controlli per la velocità di rotazione
+	if (glfwGetKey(m_window, GLFW_KEY_KP_ADD) == GLFW_PRESS)
+		rotationSpeed += 0.1f;
+	if (glfwGetKey(m_window, GLFW_KEY_KP_SUBTRACT) == GLFW_PRESS)
+		rotationSpeed = (rotationSpeed > 0.1f) ? rotationSpeed - 0.1f : 0.1f;
+
 }

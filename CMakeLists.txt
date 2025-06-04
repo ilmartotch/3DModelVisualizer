@@ -5,7 +5,7 @@ set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.c
 project(MyOpenGLProject LANGUAGES CXX)
 
 # Imposta standard C++
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -19,15 +19,18 @@ add_executable(App
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-#find_package(stb CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 find_package(OpenGL REQUIRED)
+find_package(glm CONFIG REQUIRED)
+
+target_include_directories(App PRIVATE ${Stb_INCLUDE_DIR})
 
 target_link_libraries(App PRIVATE
   glfw
   glad::glad
-  #imgui::imgui
-  #stb::stb
+  imgui::imgui
   OpenGL::GL
+  glm::glm
 )
 
 set(SHADERS_DIR ${CMAKE_SOURCE_DIR}/Shaders)

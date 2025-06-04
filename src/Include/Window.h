@@ -25,8 +25,18 @@ public:
     GLFWwindow* getGLFWwindow() const;
 
 	// Funzione di callback per la gestione degli input
-    void processInput() const {};
+    void processInput() const;
+
+    //gestione rotazione
+    float getRotationX() const { return rotationX; }
+	float getRotationY() const { return rotationY; }
+	float getRotationZ() const { return rotationZ; }
 
 private:
     GLFWwindow* m_window;
+
+	mutable float rotationX = 0.0f;
+	mutable float rotationY = 0.0f;
+    mutable float rotationZ = 0.0f;
+    mutable float rotationSpeed = 1.0f;
 };

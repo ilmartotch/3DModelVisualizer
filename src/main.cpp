@@ -9,6 +9,19 @@
 #include <cmath>
 #include <vector>
 
+//ImGui
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
+
+//modelli
+#include "Include/ModelManager.h"
+#include "../Assets/Include/CubeModel.h"
+#include "../Assets/Include/SphereModel.h"
+#include "../Assets/Include/PyramidModel.h"
+#include "Include/Grid.h"
+
+
 //input comandi
 struct MouseControl {
 	bool isPressed = false;
@@ -23,6 +36,11 @@ MouseControl mouseControl;
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 	if (button == GLFW_MOUSE_BUTTON_LEFT) {
 		if (action == GLFW_PRESS) {
+			// Prima verifichiamo se il mouse è sopra ImGui
+			if (ImGui::GetIO().WantCaptureMouse) {
+				return;  // Non gestire il click se ImGui lo vuole catturare
+			}
+
 			mouseControl.isPressed = true;
 			double xpos, ypos;
 			glfwGetCursorPos(window, &xpos, &ypos);
@@ -35,6 +53,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 	}
 }
 
+//callback movimento del mouse
 void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 	if (mouseControl.isPressed) {
 		float xoffset = (float)xpos - mouseControl.lastX;
@@ -61,49 +80,6 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 	}
 }
 
-//creazione sfondo
-GLuint createGrid(int size, float spacing) {
-	std::vector<float> gridVertices;
-
-	// Crea linee orizzontali e verticali
-	for (int i = -size; i <= size; i++) {
-		// Linee orizzontali (parallele all'asse X)
-		gridVertices.push_back(-size * spacing); // x1
-		gridVertices.push_back(0.0f);           // y1
-		gridVertices.push_back(i * spacing);    // z1
-
-		gridVertices.push_back(size * spacing);  // x2
-		gridVertices.push_back(0.0f);           // y2
-		gridVertices.push_back(i * spacing);    // z2
-
-		// Linee verticali (parallele all'asse Z)
-		gridVertices.push_back(i * spacing);    // x1
-		gridVertices.push_back(0.0f);           // y1
-		gridVertices.push_back(-size * spacing); // z1
-
-		gridVertices.push_back(i * spacing);    // x2
-		gridVertices.push_back(0.0f);           // y2
-		gridVertices.push_back(size * spacing);  // z2
-	}
-
-	GLuint VAO, VBO;
-	glGenVertexArrays(1, &VAO);
-	glGenBuffers(1, &VBO);
-
-	glBindVertexArray(VAO);
-
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_STATIC_DRAW);
-
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-
-	glBindBuffer(GL_ARRAY_BUFFER, 0);
-	glBindVertexArray(0);
-
-	return VAO;
-}
-
 int main() {
 
 	//working directory
@@ -116,9 +92,17 @@ int main() {
 	glfwSetMouseButtonCallback(win.getGLFWwindow(), mouseButtonCallback);
 	glfwSetCursorPosCallback(win.getGLFWwindow(), cursorPositionCallback);
 
+	// Inizializza ImGui
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+	ImGuiIO& io = ImGui::GetIO(); (void)io;
+	ImGui::StyleColorsDark();
+	ImGui_ImplGlfw_InitForOpenGL(win.getGLFWwindow(), true);
+	ImGui_ImplOpenGL3_Init("#version 330");
+
 	GLuint shader = LoadShader(
-		"Shaders/Triangle.vert",
-		"Shaders/Triangle.frag"
+		"Shaders/Object.vert",
+		"Shaders/Object.frag"
 	);
 
 	GLuint gridShader = LoadShader(
@@ -126,63 +110,28 @@ int main() {
 		"Shaders/Grid.frag"
 	);
 
-	GLuint gridVAO = createGrid(20, 0.5f);
+	if (shader == 0 || gridShader == 0) {
+		std::cerr << "Errore nel caricamento degli shader." << std::endl;
+		return -1;
+	}
 
-	//matrice di posizione
-	glm::mat4 projection = glm::perspective(glm::radians(90.0f), 800.0f / 600.0f, 0.1f, 100.0f);
+	//Crea un modelManager per la gestione dei modelli
+	ModelManager modelManager;
 
-	//matrice camera
-	glm::mat4 view = glm::lookAt(
-		glm::vec3(0.0f, 1.0f, 3.0f), // Posizione camera
-		glm::vec3(0.0f, 0.0f, 0.0f), // Punto di vista
-		glm::vec3(0.0f, 1.0f, 0.0f)  // Vettore "up" della camera
-	);
+	modelManager.registerModel(std::make_shared<CubeModel>());
+	modelManager.registerModel(std::make_shared<SphereModel>());
+	modelManager.registerModel(std::make_shared<PyramidModel>());
 
-	//matrice -> shader
-	SetUniformMat4(shader, "projection", projection);
-	SetUniformMat4(shader, "view", view);
+	// Inizializza i modelli registrati
+	modelManager.initializeModels();
 
-	float vertices[] = {
+	//imposta il modello della griglia
+	Grid grid(20, 0.5f);
+	grid.initialize();
 
-		// Posizioni				Colori
-		-0.5f, 0.0f, -0.5f,          1.0f, 0.0f, 0.0f,  // 0: sinistra-back (rosso)
-		 0.5f, 0.0f, -0.5f,          0.0f, 1.0f, 0.0f,  // 1: destra-back (verde)
-		 0.5f, 0.0f,  0.5f,          0.0f, 0.0f, 1.0f,  // 2: destra-front (blu)
-		-0.5f, 0.0f,  0.5f,          1.0f, 1.0f, 0.0f,  // 3: sinistra-front (giallo)
-		// Apice
-		 0.0f, 0.8f,  0.0f,          1.0f, 0.0f, 1.0f   // 4: top (magenta)
-	};
-	
-	unsigned int indices[] = {
-		0, 1, 2,  2, 3, 0,      // base
-		0, 1, 4,                // lato 1
-		1, 2, 4,                // lato 2
-		2, 3, 4,                // lato 3
-		3, 0, 4                 // lato 4
-	};
-
-	GLuint VAO, VBO, EBO;
-	glGenVertexArrays(1, &VAO);
-	glGenBuffers(1, &VBO);
-	glGenBuffers(1, &EBO);
-
-	glBindVertexArray(VAO);
-
-	glBindBuffer(GL_ARRAY_BUFFER, VBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-	glEnableVertexAttribArray(0);
-
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-	glEnableVertexAttribArray(1);
-
-	glEnable(GL_DEPTH_TEST);
-	
 	float timeValue = 0.0f;
+
+	std::string selectedModel = "";
 	
 	//render loop
 	while (!win.shouldClose()) {
@@ -219,51 +168,75 @@ int main() {
 		SetUniformMat4(gridShader, "view", view);
 		SetUniformMat4(gridShader, "projection", projection);
 
-		glBindVertexArray(gridVAO);
-		glDrawArrays(GL_LINES, 0, 4 * 41);
+		grid.render(gridShader);
 
-		// Creazione del modello 3D
-		glUseProgram(shader);
+		//aggiornamento rendering modelli attivi
+		if (modelManager.hasActiveModel()) {
+			modelManager.updateActiveModel(currentFrame);
 
-		//valori rotazione del mouse
-		glm::mat4 model = glm::mat4(1.0f);
-		model = glm::rotate(model, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
-		model = glm::rotate(model, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
+			glUseProgram(shader);
 
-		SetUniformMat4(shader, "model", model);
-		SetUniformMat4(shader, "view", view);
-		SetUniformMat4(shader, "projection", projection);
+			glm::mat4 model = glm::mat4(1.0f);
+			model = glm::rotate(model, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
+			model = glm::rotate(model, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
 
-		glBindVertexArray(VAO);
-		glDrawElements(GL_TRIANGLES, 18, GL_UNSIGNED_INT, 0);
+			SetUniformMat4(shader, "model", model);
+			SetUniformMat4(shader, "view", view);
+			SetUniformMat4(shader, "projection", projection);
+
+			modelManager.renderActiveModel();
+		}
+
+		//generazione frame ImGui
+		ImGui_ImplOpenGL3_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+
+		// Creazione del menu ImGui
+		ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
+		ImGui::SetNextWindowSize(ImVec2(220, 0), ImGuiCond_Always);
+		ImGui::Begin("Model Selector", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+
+		ImGui::Text("Select a model:");
+		std::vector<std::string> modelNames = modelManager.getModelNames();
+
+		//pulsante per la selezione dei modelli
+		for (const auto& name : modelNames) {
+			if (ImGui::Button(name.c_str(), ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+				modelManager.setActiveModel(name);
+				selectedModel = name;
+			}
+		}
+
+		//visualizzazione solo griglia
+		if (ImGui::Button("Nessun modello", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+			// Deseleziona il modello attivo
+			modelManager.setActiveModel("");
+			selectedModel = "";
+
+			mouseControl.rotationX = 0.0f;
+			mouseControl.rotationY = 0.0f;
+		}
+
+		ImGui::End();
+
+		ImGui::Render();
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		win.swapBuffers();
-
-		//aggiornamento colori
-		if (timeValue > 0.05f) {
-			timeValue = 0.0f;
-
-			//calcolo nuovi colori
-			for (int i = 0; i < 5; i++)
-			{
-				int colorOffset = i * 6 + 3;
-
-				vertices[colorOffset] = 0.5f + 0.5f * sin(currentFrame + i * 0.5f);
-				vertices[colorOffset + 1] = 0.5f + 0.5f * sin(currentFrame + i * 1.0f + 2.0f);
-				vertices[colorOffset + 2] = 0.5f + 0.5f * sin(currentFrame + i * 1.5f + 4.0f);
-			}
-			glBindBuffer(GL_ARRAY_BUFFER, VBO);
-			glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
-		}
 	}
 
-	glDeleteVertexArrays(1, &VAO);
-	glDeleteBuffers(1, &VBO);
-	glDeleteBuffers(1, &EBO);
-	glDeleteVertexArrays(1, &gridVAO);
+	// Pulisci le risorse
+	modelManager.cleanup();
+
+	// Chiudi ImGui
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+
 	glDeleteProgram(shader);
 	glDeleteProgram(gridShader);
-    
+
 	glfwTerminate();
 	return 0;
 }

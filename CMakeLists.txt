@@ -13,7 +13,7 @@ set(CMAKE_VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 # src/CMakeLists.txt
 add_executable(App
   src/main.cpp
- "src/Include/Window.h" "src/Source/Window.cpp" "src/Source/Shaders.cpp" "src/Include/Shaders.h")
+ "src/Include/Window.h" "src/Source/Window.cpp" "src/Source/Shaders.cpp" "src/Include/Shaders.h" "src/Include/Model.h" "src/Source/Model.cpp" "Assets/Include/PyramidModel.h" "Assets/Source/PyramidModel.cpp" "Assets/Include/CubeModel.h" "Assets/Source/CubeModel.cpp" "Assets/Include/SphereModel.h" "Assets/Source/SphereModel.cpp" "src/Include/Grid.h" "src/Source/Grid.cpp" "src/Include/ModelManager.h" "src/Source/ModelManager.cpp")
 
 # Trova pacchetti con vcpkg
 find_package(glfw3 CONFIG REQUIRED)
@@ -24,6 +24,8 @@ find_package(OpenGL REQUIRED)
 find_package(glm CONFIG REQUIRED)
 
 target_include_directories(App PRIVATE ${Stb_INCLUDE_DIR})
+
+target_compile_definitions(App PRIVATE IMGUI_IMPL_OPENGL_GLAD)
 
 target_link_libraries(App PRIVATE
   glfw

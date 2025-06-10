@@ -4,8 +4,11 @@
   "dependencies": [
     "glfw3",
     "glad",
-    "imgui",
     "stb",
-    "glm"
+    "glm",
+    {
+      "name": "imgui",
+      "features": ["glfw-binding", "opengl3-binding"]
+    }
   ]
 }

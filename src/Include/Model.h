@@ -19,6 +19,15 @@ public:
 	const std::string& getName() const { return m_name; }
 	bool isInitialized() const { return m_initialized; }
 
+	enum class RenderMode {
+		SOLID = 0,
+		WIREFRAME = 1,
+		SOLID_WITH_WIREFRAME = 2
+	};
+
+	void setRenderMode(RenderMode mode) { m_renderMode = mode; }
+	RenderMode getRenderMode() const { return m_renderMode; }
+
 protected:
 	GLuint m_vao;
 	GLuint m_vbo;
@@ -30,4 +39,5 @@ protected:
 	bool m_initialized;
 
 	void updateColors(float currentTime);
+	RenderMode m_renderMode = RenderMode::SOLID;
 };

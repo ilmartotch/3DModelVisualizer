@@ -85,8 +85,35 @@ void CubeModel::render() {
     if (!m_initialized) return;
 
     glBindVertexArray(m_vao);
-    glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
+
+    switch (m_renderMode) {
+    case RenderMode::SOLID:
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
+		break;
+
+	case RenderMode::WIREFRAME:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
+		break;
+
+    case RenderMode::SOLID_WITH_WIREFRAME:
+		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+		glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
+		
+        // Poi renderizza il wireframe
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(-1.0f, -1.0f);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(1.5f);
+        glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
+        glLineWidth(1.0f);
+        glDisable(GL_POLYGON_OFFSET_FILL);
+        break;
+    }
+
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); // Reset to default mode
+	glBindVertexArray(0);
 }
 
 void CubeModel::cleanup() {

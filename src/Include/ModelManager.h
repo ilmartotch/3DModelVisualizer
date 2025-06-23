@@ -26,6 +26,12 @@ public:
 
 	bool hasActiveModel() const;
 
+	void setActiveModelRenderMode(Model::RenderMode mode) {
+		if (m_activeModel) {
+			m_activeModel->setRenderMode(mode);
+		}
+	}
+
 private:
 	std::map<std::string, std::shared_ptr<Model>> m_models;
 	std::shared_ptr<Model> m_activeModel;

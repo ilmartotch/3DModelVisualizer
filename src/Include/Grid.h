@@ -1,20 +1,22 @@
 #pragma once
 #include <vector>
 #include <glad/glad.h>
-#include <glm/glm.hpp>
+#include <GLFW/glfw3.h>
+#include <string.h> // Per memcpy
 
 class Grid {
 public:
-	Grid(int size = 20, float spacing = 0.5f);
-	~Grid();
+    Grid(int size = 20, float spacing = 0.5f);
+    ~Grid();
 
-	void initialize();
-	void render(GLuint shader);
+    void initialize();
+    void render(GLuint shader);
 
 private:
-	int m_size;
-	float m_spacing;
-	GLuint m_vao, m_vbo;
-	std::vector<float> m_vertices;
-	bool m_initialized;
+    int m_size;
+    float m_spacing;
+    GLuint m_vao;
+    GLuint m_vbo;
+    bool m_initialized;
+    size_t m_vertexCount;
 };

@@ -1,5 +1,6 @@
 #include <iostream>
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include "Include/Window.h"
 #include "Include/Shaders.h"
 #include <filesystem>
@@ -26,6 +27,9 @@ int windoWidth = 800;
 int windowHeight = 600;
 bool windowResized = false;
 static bool shoeHelpWindow = false;
+const int SIDEBAR_WIDTH = 300;
+bool showModelInfo = true;
+bool showSelectedModelPanel = false;
 
 //FPS
 float fps = 0.0f;
@@ -38,6 +42,9 @@ bool objectMoving = false;
 glm::vec3 selectedObjectPosition = glm::vec3(0.0f, 0.5f, 0.0f);
 glm::vec3 lastMousePos;
 float moveSpeed = 0.1f;
+
+//tracciamento RenderMode
+int currentRenderMode = static_cast<int>(Model::RenderMode::SOLID);
 
 //input comandi
 struct MouseControl {
@@ -53,6 +60,15 @@ struct MouseControl {
 	float orbitalAngleX = 0.0f;
 	float orbitalAngleY = 0.0f;
 };
+
+enum class MoveAxis {
+	NONE,
+	X_AXIS,
+	Y_AXIS,
+	Z_AXIS
+};
+
+MoveAxis currentMoveAxis = MoveAxis::NONE;
 
 MouseControl mouseControl;
 
@@ -96,6 +112,20 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 			}
 			else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && modelManager.hasActiveModel()) {
 				objectMoving = true;
+				
+				if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+					currentMoveAxis = MoveAxis::X_AXIS;
+				}
+				else if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+					currentMoveAxis = MoveAxis::Y_AXIS;
+				}
+				else if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+					currentMoveAxis = MoveAxis::Z_AXIS;
+				}
+				else {
+					currentMoveAxis = MoveAxis::NONE; // Nessun asse specificato
+				}
+
 				double xpos, ypos;
 				glfwGetCursorPos(window, &xpos, &ypos);
 				lastMousePos = glm::vec3((float)xpos, (float)ypos, 0.0f);
@@ -117,6 +147,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 			mouseControl.isPressed = false;
 			mouseControl.isOrbiting = false;
 			objectMoving = false;
+			currentMoveAxis = MoveAxis::NONE;
 		}
 	}
 }
@@ -135,8 +166,24 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 		glm::vec3 currentMousePos = glm::vec3((float)xpos, (float)ypos, 0.0f);
 		glm::vec3 mouseDelta = currentMousePos - lastMousePos;
 
-		selectedObjectPosition.x += mouseDelta.x * moveSpeed;
-		selectedObjectPosition.y -= mouseDelta.y * moveSpeed;
+		switch (currentMoveAxis)
+		{
+		case MoveAxis::X_AXIS:
+			selectedObjectPosition.x += mouseDelta.x * moveSpeed;
+			break;
+		case MoveAxis::Y_AXIS:
+			selectedObjectPosition.y -= mouseDelta.y * moveSpeed;
+			break;
+		case MoveAxis::Z_AXIS:
+			selectedObjectPosition.z += mouseDelta.y * moveSpeed; 
+			break;
+		case MoveAxis::NONE:
+			selectedObjectPosition.x += mouseDelta.x * moveSpeed;
+			selectedObjectPosition.y += mouseDelta.y * moveSpeed;
+			selectedObjectPosition.z += mouseDelta.y * moveSpeed;
+			break;
+		}
+
 		lastMousePos = currentMousePos;
 	}
 	else if (mouseControl.isPressed) {
@@ -168,7 +215,7 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
 	mouseControl.cameraDistance -= static_cast<float>(yoffset) * zoomSpeed;
 
 	if (mouseControl.cameraDistance < 0.5f) mouseControl.cameraDistance = 0.5f; // Limita la distanza minima della camera
-	if (mouseControl.cameraDistance > 10.0f) mouseControl.cameraDistance = 10.0f; // Limita la distanza massima della camera
+	if (mouseControl.cameraDistance > 12.0f) mouseControl.cameraDistance = 12.0f; // Limita la distanza massima della camera
 
 	updateCameraPosition();
 }
@@ -301,32 +348,60 @@ int main() {
 			model = glm::translate(model, selectedObjectPosition);
 			model = glm::rotate(model, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
 			model = glm::rotate(model, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
+			model = glm::scale(model, modelScale);
 
 			SetUniformMat4(shader, "model", model);
 			SetUniformMat4(shader, "view", view);
 			SetUniformMat4(shader, "projection", projection);
 
+			GLint colorLocation = glGetUniformLocation(shader, "objectColor");
+			if(colorLocation != -1)
+				glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f);
+
+			Model::RenderMode currentMode = static_cast<Model::RenderMode>(currentRenderMode);
+			switch (currentMode) 
+			{
+			case Model::RenderMode::WIREFRAME:
+				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+				break;
+			case Model::RenderMode::SOLID_WITH_WIREFRAME:
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+				break;
+			default:
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+				break;
+			}
+
 			modelManager.renderActiveModel();
 
 			if (objectSelected) {
+
+				Model::RenderMode currentMode = static_cast<Model::RenderMode>(currentRenderMode);
+
 				glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 				glm::mat4 outilineModel = glm::mat4(1.0f);
 				outilineModel = glm::translate(outilineModel, selectedObjectPosition);
 				outilineModel = glm::rotate(outilineModel, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
 				outilineModel = glm::rotate(outilineModel, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
 				outilineModel = glm::scale(outilineModel, modelScale * 1.05f);
-				model = glm::scale(model, modelScale);
 
 				SetUniformMat4(shader, "model", outilineModel);
 
-				GLint colorLocation = glGetUniformLocation(shader, "objectColor");
 				if (colorLocation != -1)
-					glUniform3f(colorLocation, 1.0f, 1.0f, 0.0f);
+					glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f);
 				modelManager.renderActiveModel();
 
 				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 			}
+
+			if (currentMode == Model::RenderMode::WIREFRAME) {
+				glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+			}
 		}
+
+		void renderImGuiInterface(Window & win, float fps, std::string& selectedModel,
+			glm::vec3 & selectedObjectPosition, glm::vec3 & modelScale);
+		ImVec2 displaySize = ImGui::GetIO().DisplaySize;
 
 		//generazione frame ImGui
 		ImGui_ImplOpenGL3_NewFrame();
@@ -334,9 +409,16 @@ int main() {
 		ImGui::NewFrame();
 
 		// Creazione del menu ImGui
-		ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-		ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_Always);
-		ImGui::Begin("Model Selector", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse);
+		ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+		ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, displaySize.y), ImGuiCond_Always);
+		ImGui::Begin("##Sidebar", nullptr,
+			ImGuiWindowFlags_NoTitleBar | 
+			ImGuiWindowFlags_NoMove | 
+			ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+		ImGui::Text("3D Modeler");
+		ImGui::Separator();
 		if (ImGui::CollapsingHeader("Models", ImGuiTreeNodeFlags_DefaultOpen)) {
 			ImGui::Text("Select a model:");
 			std::vector<std::string> modelNames = modelManager.getModelNames();
@@ -346,6 +428,13 @@ int main() {
 				if (ImGui::Button(name.c_str(), ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
 					modelManager.setActiveModel(name);
 					selectedModel = name;
+					objectSelected = true;
+					showSelectedModelPanel = true;
+
+					//sincronizzazione stato del modello
+					if (modelManager.hasActiveModel()) {
+						currentRenderMode = static_cast<int>(modelManager.getActiveModel()->getRenderMode());
+					}
 				}
 			}
 
@@ -354,24 +443,21 @@ int main() {
 				// Deseleziona il modello attivo
 				modelManager.setActiveModel("");
 				selectedModel = "";
-
+				objectMoving = false;
+				showSelectedModelPanel = false;
 				mouseControl.rotationX = 0.0f;
 				mouseControl.rotationY = 0.0f;
 			}
-
-			ImGui::End();
 		}
 
 		//Modalità di rendering
 		ImGui::Separator();
 		if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
-			static const char* renderModes[] = { "Solid", "Wireframe", "Solid + Wireframe" };
-			static int currenRederMode = 0;
-
-			if (ImGui::Combo("Render Mode", &currenRederMode, renderModes, IM_ARRAYSIZE(renderModes)))
+			static const char* renderModes[] = { "Solid", "Wireframe", "Solid + Wireframe" }; 
+            if (ImGui::Combo("Render Mode", &currentRenderMode, renderModes, IM_ARRAYSIZE(renderModes)))
 			{
 				if (modelManager.hasActiveModel()) {
-					Model::RenderMode mode = static_cast<Model::RenderMode>(currenRederMode);
+					Model::RenderMode mode = static_cast<Model::RenderMode>(currentRenderMode);
 					modelManager.setActiveModelRenderMode(mode);
 				}
 			}
@@ -379,9 +465,83 @@ int main() {
 
 		//regolazione distanza telecamera
 		if (ImGui::CollapsingHeader("Camera Control", ImGuiTreeNodeFlags_DefaultOpen)) {
-			if (ImGui::SliderFloat("Camera Distance", &mouseControl.cameraDistance, 1.0f, 10.0f))
+			if (ImGui::SliderFloat("Camera Distance", &mouseControl.cameraDistance, 0.5f, 12.0f))
 			{
 				updateCameraPosition();
+			}
+		}
+
+		//dati modello selezionato
+		if (objectSelected && modelManager.hasActiveModel() && showSelectedModelPanel) {
+			ImGui::Separator();
+			if (ImGui::CollapsingHeader("Selected Model", ImGuiTreeNodeFlags_DefaultOpen)) {
+				ImGui::Text("Selected Model: %s", selectedModel.c_str());
+
+				ImGui::Separator();
+				ImGui::Text("Position:");
+
+				ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
+				ImGui::InputFloat("X##pos", &selectedObjectPosition.x, 0.1f);
+				ImGui::SameLine();
+				ImGui::InputFloat("Y##pos", &selectedObjectPosition.y, 0.1f);
+				ImGui::SameLine();
+				ImGui::InputFloat("Z##pos", &selectedObjectPosition.z, 0.1f);
+				ImGui::PopItemWidth();
+
+				ImGui::SliderFloat("Pos X", &selectedObjectPosition.x, -10.0f, 10.0f);
+				ImGui::SliderFloat("Pos Y", &selectedObjectPosition.y, -10.0f, 10.0f);
+				ImGui::SliderFloat("Pos Z", &selectedObjectPosition.z, -10.0f, 10.0f);
+
+				if (ImGui::Button("Reset Position", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
+					selectedObjectPosition = glm::vec3(0.0f, 0.5f, 0.0f);
+				}
+
+				// Sezione dimensione
+				ImGui::Separator();
+				ImGui::Text("Scale");
+
+				ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
+				ImGui::InputFloat("X##scale", &modelScale.x, 0.1f);
+				ImGui::SameLine();
+				ImGui::InputFloat("Y##scale", &modelScale.y, 0.1f);
+				ImGui::SameLine();
+				ImGui::InputFloat("Z##scale", &modelScale.z, 0.1f);
+				ImGui::PopItemWidth();
+
+				// Checkbox per mantenere le proporzioni
+				static bool maintainProportions = true;
+				ImGui::Checkbox("Maintain proportions", &maintainProportions);
+
+				// Se mantiene le proporzioni, aggiorna tutti i valori quando uno cambia
+				if (maintainProportions) {
+					static float lastScaleX = 1.0f;
+					static float lastScaleY = 1.0f;
+					static float lastScaleZ = 1.0f;
+
+					if (modelScale.x != lastScaleX) {
+						float ratio = modelScale.x / lastScaleX;
+						modelScale.y *= ratio;
+						modelScale.z *= ratio;
+					}
+					else if (modelScale.y != lastScaleY) {
+						float ratio = modelScale.y / lastScaleY;
+						modelScale.x *= ratio;
+						modelScale.z *= ratio;
+					}
+					else if (modelScale.z != lastScaleZ) {
+						float ratio = modelScale.z / lastScaleZ;
+						modelScale.x *= ratio;
+						modelScale.y *= ratio;
+					}
+
+					lastScaleX = modelScale.x;
+					lastScaleY = modelScale.y;
+					lastScaleZ = modelScale.z;
+				}
+
+				if (ImGui::Button("Reset Scale", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
+					modelScale = glm::vec3(1.0f, 1.0f, 1.0f);
+				}
 			}
 		}
 
@@ -413,102 +573,17 @@ int main() {
 			continue;
 		}
 
-		if (objectSelected && modelManager.hasActiveModel() && ImGui::CollapsingHeader("Selected Model", ImGuiTreeNodeFlags_DefaultOpen)) {
-			ImGui::Separator();
-			ImGui::Text("Selected Model: %s", selectedModel.c_str());
-			ImGui::Text("Position: (%.2f, %.2f, %.2f)", 
-				selectedObjectPosition.x, 
-				selectedObjectPosition.y, 
-				selectedObjectPosition.z);
-
-			ImGui::SliderFloat("Pos X", &selectedObjectPosition.x, -10.0f, 10.0f);
-			ImGui::SliderFloat("Pos Y", &selectedObjectPosition.y, -10.0f, 10.0f);
-			ImGui::SliderFloat("Pos Z", &selectedObjectPosition.z, -10.0f, 10.0f);
-			if (ImGui::Button("Reset Position")) {
-				selectedObjectPosition = glm::vec3(0.0f, 0.5f, 0.0f);
-			}
-		}
-
-		//info sul modello
-		if (modelManager.hasActiveModel()) {
-			ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 220), ImGuiCond_FirstUseEver);
-			ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-			ImGui::Begin("Model Info", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-
-			ImGui::Text("Model: %s", selectedModel.c_str());
-
-			ImGui::Separator();
-			ImGui::Text("Position");
-
-			// Campi modificabili per le coordinate X, Y, Z
-			ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-			ImGui::InputFloat("X##pos", &selectedObjectPosition.x, 0.1f);
-			ImGui::SameLine();
-			ImGui::InputFloat("Y##pos", &selectedObjectPosition.y, 0.1f);
-			ImGui::SameLine();
-			ImGui::InputFloat("Z##pos", &selectedObjectPosition.z, 0.1f);
-			ImGui::PopItemWidth();
-
-			// Sezione Dimensione
-			ImGui::Separator();
-			ImGui::Text("Scale");
-
-			// Campi modificabili per la scala X, Y, Z
-			ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-			ImGui::InputFloat("X##scale", &modelScale.x, 0.1f);
-			ImGui::SameLine();
-			ImGui::InputFloat("Y##scale", &modelScale.y, 0.1f);
-			ImGui::SameLine();
-			ImGui::InputFloat("Z##scale", &modelScale.z, 0.1f);
-			ImGui::PopItemWidth();
-
-			// Checkbox per mantenere le proporzioni
-			static bool maintainProportions = true;
-			ImGui::Checkbox("Maintain proportions", &maintainProportions);
-
-			// Se mantiene le proporzioni, aggiorna tutti i valori quando uno cambia
-			if (maintainProportions) {
-				static float lastScaleX = 1.0f;
-				static float lastScaleY = 1.0f;
-				static float lastScaleZ = 1.0f;
-
-				if (modelScale.x != lastScaleX) {
-					float ratio = modelScale.x / lastScaleX;
-					modelScale.y *= ratio;
-					modelScale.z *= ratio;
-				}
-				else if (modelScale.y != lastScaleY) {
-					float ratio = modelScale.y / lastScaleY;
-					modelScale.x *= ratio;
-					modelScale.z *= ratio;
-				}
-				else if (modelScale.z != lastScaleZ) {
-					float ratio = modelScale.z / lastScaleZ;
-					modelScale.x *= ratio;
-					modelScale.y *= ratio;
-				}
-
-				lastScaleX = modelScale.x;
-				lastScaleY = modelScale.y;
-				lastScaleZ = modelScale.z;
-			}
-
-			// Pulsante per reimpostare la scala
-			if (ImGui::Button("Reset Scale")) {
-				modelScale = glm::vec3(1.0f, 1.0f, 1.0f);
-			}
-
-			ImGui::End();
-		}
-
-		// Help Window
+		//pulsante help
+		ImGui::Separator();
 		if (ImGui::Button("Help command window", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
 			shoeHelpWindow = !shoeHelpWindow;
 		}
+
+		ImGui::End();//fine sidebar
+
+		//finesta help
 		if (shoeHelpWindow) {
-			ImVec2 mainWindowPos = ImGui::GetWindowPos();
-			ImVec2 mainWindowSize = ImGui::GetWindowSize();
-			ImGui::SetNextWindowPos(ImVec2(mainWindowPos.x + mainWindowSize.x + 10, mainWindowPos.y), ImGuiCond_FirstUseEver);
+			ImGui::SetNextWindowPos(ImVec2(SIDEBAR_WIDTH + 10, 10), ImGuiCond_FirstUseEver);
 			ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_FirstUseEver);
 
 			if (ImGui::Begin("Commands help", &shoeHelpWindow, ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -516,13 +591,16 @@ int main() {
 				ImGui::Separator();
 
 				ImGui::Text("Cam navigation:");
-				ImGui::BulletText("Orbital motion: left ALT + lefth click");
+				ImGui::BulletText("Orbital motion: left ALT + left click");
 				ImGui::BulletText("Zoom in and out: scroll wheel");
 
 				ImGui::Separator();
 				ImGui::Text("Model manipulation:");
 				ImGui::BulletText("Select model: left click on the model");
 				ImGui::BulletText("Move model: left SHIFT + left click and drag");
+				ImGui::BulletText("Move on X axis: left SHIFT + Q + left click and drag");
+				ImGui::BulletText("Move on Y axis: left SHIFT + W + left click and drag");
+				ImGui::BulletText("Move on Z axis: left SHIFT + E + left click and drag");
 				ImGui::BulletText("Rotate model: left click and drag");
 				ImGui::BulletText("Change render mode: select from the dropdown menu");
 
@@ -551,7 +629,6 @@ int main() {
 
 		ImGui::Render();
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
 		win.swapBuffers();
 	}
 

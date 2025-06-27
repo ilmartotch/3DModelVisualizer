@@ -32,6 +32,10 @@ public:
 		}
 	}
 
+	std::shared_ptr<Model> getActiveModel() const {
+		return m_activeModel;
+	}
+
 private:
 	std::map<std::string, std::shared_ptr<Model>> m_models;
 	std::shared_ptr<Model> m_activeModel;

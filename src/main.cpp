@@ -20,11 +20,29 @@
 #include <imgui_impl_opengl3.h>
 
 // Modelli
-#include "Include/ModelManager.h"
-#include "Assets/Include/CubeModel.h"
-#include "Assets/Include/SphereModel.h"
-#include "Assets/Include/PyramidModel.h"
+#include "Include/Model.h"
+#include "../Assets/Include/CubeModel.h"
+#include "../Assets/Include/SphereModel.h"
+#include "../Assets/Include/PyramidModel.h"
 #include "Include/Grid.h"
+#include "Include/ModelManager.h"
+#include <SceneManager.h>
+
+// Forward declarations
+void handlePickingResult(const glm::vec3& idColor);
+void renderTraditionalModelOutline(GLuint shader, const glm::mat4& model);
+void renderSelectedInstanceOutline(GLuint shader);
+void processMousePicking(int x, int y);
+void framebufferSizeCallback(GLFWwindow* window, int width, int height);
+void updateCameraPosition();
+void applyRenderMode(Model::RenderMode mode);
+void renderTraditionalModel(GLuint shader, const glm::mat4& view, const glm::mat4& projection);
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos);
+void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+void initializePickingSystem();
+void initializeInstancedRendering();
+void renderInstanceControlPanel();
 
 // Variabili window
 int windoWidth = 800;
@@ -42,18 +60,14 @@ int frameCount = 0;
 glm::vec3 modelScale(1.0f, 1.0f, 1.0f);
 
 // Oggetti e controlli
-bool objectSelected = false;
 bool objectMoving = false;
-glm::vec3 selectedObjectPosition = glm::vec3(0.0f, 0.5f, 0.0f);
 glm::vec3 lastMousePos;
 float moveSpeed = 0.1f;
 
 // Manager per modelli istanziati e picking
-InstancedModelManager instancedModelManager;
 PickingBuffer pickingBuffer;
 GLuint pickingShader = 0;
 bool pickingEnabled = true;
-bool useInstancing = false; // Flag per attivare il rendering istanziato
 
 // Tracciamento RenderMode
 int currentRenderMode = static_cast<int>(Model::RenderMode::SOLID);
@@ -79,6 +93,8 @@ enum class MoveAxis {
     Y_AXIS,
     Z_AXIS
 };
+
+SceneManager scenaManager(modelManager);
 
 MoveAxis currentMoveAxis = MoveAxis::NONE;
 
@@ -113,7 +129,93 @@ void updateCameraPosition() {
     mouseControl.camPos = glm::vec3(camX, camY + mouseControl.cameraHeight / 2, camZ);
 }
 
-// Gestione del picking con ID buffer
+// Funzioni helper per il rendering
+void applyRenderMode(Model::RenderMode mode) {
+    switch (mode) {
+    case Model::RenderMode::WIREFRAME:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        break;
+    case Model::RenderMode::SOLID_WITH_WIREFRAME:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        break;
+    default:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        break;
+    }
+}
+
+void renderTraditionalModel(GLuint shader, const glm::mat4& view, const glm::mat4& projection) {
+    if (!modelManager.hasActiveModel()) return;
+
+    modelManager.updateActiveModel(glfwGetTime());
+
+    glUseProgram(shader);
+
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, selectedObjectPosition);
+    model = glm::rotate(model, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::rotate(model, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
+    model = glm::scale(model, modelScale);
+
+    SetUniformMat4(shader, "model", model);
+    SetUniformMat4(shader, "view", view);
+    SetUniformMat4(shader, "projection", projection);
+
+    GLint colorLocation = glGetUniformLocation(shader, "objectColor");
+    if (colorLocation != -1)
+        glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f);
+
+    // Applica render mode solo per questo rendering
+    applyRenderMode(static_cast<Model::RenderMode>(currentRenderMode));
+
+    modelManager.renderActiveModel();
+
+    // Ripristina stato
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    if (objectSelected && !useInstancing) {
+        renderTraditionalModelOutline(shader, model);
+    }
+}
+
+void renderTraditionalModelOutline(GLuint shader, const glm::mat4& model) {
+    GLint colorLocation = glGetUniformLocation(shader, "objectColor");
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glm::mat4 outlineModel = model;
+    outlineModel = glm::scale(outlineModel, glm::vec3(1.05f));
+
+    SetUniformMat4(shader, "model", outlineModel);
+    if (colorLocation != -1)
+        glUniform3f(colorLocation, 1.0f, 1.0f, 0.0f); // Giallo
+
+    modelManager.renderActiveModel();
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+void renderSelectedInstanceOutline(GLuint shader) {
+    ModelInstance* selected = instancedModelManager.getSelectedInstance();
+    if (!selected) return;
+
+    GLint colorLocation = glGetUniformLocation(shader, "objectColor");
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glm::mat4 outlineModel = glm::mat4(1.0f);
+    outlineModel = glm::translate(outlineModel, selected->position);
+    outlineModel = glm::rotate(outlineModel, glm::radians(selected->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+    outlineModel = glm::rotate(outlineModel, glm::radians(selected->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+    outlineModel = glm::rotate(outlineModel, glm::radians(selected->rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+    outlineModel = glm::scale(outlineModel, selected->scale * 1.05f);
+
+    SetUniformMat4(shader, "model", outlineModel);
+    if (colorLocation != -1)
+        glUniform3f(colorLocation, 1.0f, 1.0f, 0.0f);  // Giallo
+
+    instancedModelManager.getBaseModel()->render();
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+// Gestione del picking con ID buffer unificata
 void processMousePicking(int x, int y) {
     if (!pickingEnabled || !pickingBuffer.isInitialized()) return;
 
@@ -134,26 +236,25 @@ void processMousePicking(int x, int y) {
     SetUniformMat4(pickingShader, "view", view);
     SetUniformMat4(pickingShader, "projection", projection);
 
-    if (useInstancing) {
-        // Renderizza le istanze nel buffer di picking
+    // Renderizza PRIMA le istanze (se abilitate)
+    if (useInstancing && instancedModelManager.isInitialized()) {
         instancedModelManager.renderForPicking(pickingShader, view, projection);
     }
-    else if (modelManager.hasActiveModel()) {
-        // Imposta la matrice modello per il modello attivo
+
+    // POI renderizza i modelli tradizionali con ID diversi
+    if (modelManager.hasActiveModel()) {
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, selectedObjectPosition);
         model = glm::rotate(model, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
         model = glm::rotate(model, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::scale(model, modelScale);
 
-        // Imposta uniforms per il picking
         SetUniformMat4(pickingShader, "model", model);
 
-        // ID univoco per il modello attivo (usando RGB come ID)
-        glm::vec3 idColor(1.0f, 0.0f, 0.0f); // ID=1 come rosso
-        glUniform3fv(glGetUniformLocation(pickingShader, "idColor"), 1, glm::value_ptr(idColor));
+        // Usa un ID colore diverso per il modello tradizionale
+        glm::vec3 traditionalIdColor(0.0f, 1.0f, 0.0f); // Verde per distinguere
+        glUniform3fv(glGetUniformLocation(pickingShader, "idColor"), 1, glm::value_ptr(traditionalIdColor));
 
-        // Renderizza il modello attivo nel buffer di picking
         modelManager.renderActiveModel();
     }
 
@@ -166,7 +267,22 @@ void processMousePicking(int x, int y) {
     // Ripristina la viewport originale
     glViewport(0, 0, windoWidth, windowHeight);
 
-    // Gestisci la selezione in base all'ID colore
+    // Gestisci selezione considerando entrambi i sistemi
+    handlePickingResult(idColor);
+}
+
+void handlePickingResult(const glm::vec3& idColor) {
+    // Prima controlla se è un modello tradizionale (verde)
+    if (abs(idColor.y - 1.0f) < 0.01f && idColor.x < 0.01f && idColor.z < 0.01f) {
+        // Modello tradizionale selezionato
+        objectSelected = true;
+        showSelectedModelPanel = true;
+        // Deseleziona eventuali istanze
+        instancedModelManager.deselectAll();
+        return;
+    }
+
+    // Poi controlla se è un'istanza
     if (useInstancing) {
         unsigned int instanceId = instancedModelManager.getInstanceIdFromColor(idColor);
         if (instanceId > 0) {
@@ -193,7 +309,6 @@ void processMousePicking(int x, int y) {
     }
     else {
         // Logica di selezione per il rendering normale
-        // Se il colore è diverso dal colore di sfondo (nero), allora un oggetto è stato selezionato
         if (idColor.x > 0.0f || idColor.y > 0.0f || idColor.z > 0.0f) {
             objectSelected = true;
             showSelectedModelPanel = true;
@@ -393,8 +508,11 @@ void renderInstanceControlPanel() {
         }
 
         if (!useInstancing) {
-            ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Instanced rendering is disabled");
+            ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Instanced models hidden (traditional models still visible)");
             return;
+        }
+        else {
+            ImGui::Text("Both instanced and traditional models visible");
         }
 
         // Numero di istanze
@@ -561,11 +679,11 @@ int main() {
 
         grid.render(gridShader);
 
-        // Aggiornamento rendering modelli
-        if (useInstancing) {
-            // Renderizza le istanze
-            glUseProgram(shader);
+        // *** RENDERING UNIFICATO - ORA SUPPORTA ENTRAMBI I SISTEMI ***
 
+        // Renderizza le istanze se abilitate
+        if (useInstancing && instancedModelManager.isInitialized()) {
+            glUseProgram(shader);
             SetUniformMat4(shader, "view", view);
             SetUniformMat4(shader, "projection", projection);
 
@@ -573,107 +691,23 @@ int main() {
             if (colorLocation != -1)
                 glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f);
 
-            // Imposta la modalità di rendering
-            Model::RenderMode currentMode = static_cast<Model::RenderMode>(currentRenderMode);
-            switch (currentMode)
-            {
-            case Model::RenderMode::WIREFRAME:
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                break;
-            case Model::RenderMode::SOLID_WITH_WIREFRAME:
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-                break;
-            default:
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-                break;
-            }
+            // Applica render mode per le istanze
+            applyRenderMode(static_cast<Model::RenderMode>(currentRenderMode));
 
             // Renderizza le istanze
             instancedModelManager.render(shader, view, projection);
 
-            // Evidenzia l'oggetto selezionato
+            // Evidenzia l'istanza selezionata
             if (objectSelected) {
-                ModelInstance* selected = instancedModelManager.getSelectedInstance();
-                if (selected) {
-                    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                    glm::mat4 outlineModel = glm::mat4(1.0f);
-                    outlineModel = glm::translate(outlineModel, selected->position);
-                    outlineModel = glm::rotate(outlineModel, glm::radians(selected->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
-                    outlineModel = glm::rotate(outlineModel, glm::radians(selected->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
-                    outlineModel = glm::rotate(outlineModel, glm::radians(selected->rotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
-                    outlineModel = glm::scale(outlineModel, selected->scale * 1.05f);
-
-                    SetUniformMat4(shader, "model", outlineModel);
-                    glUniform3f(colorLocation, 1.0f, 1.0f, 0.0f);  // Colore giallo per l'outline
-
-                    // Renderizza il contorno senza istancing
-                    instancedModelManager.getBaseModel()->render();
-
-                    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-                }
+                renderSelectedInstanceOutline(shader);
             }
 
-            if (currentMode == Model::RenderMode::WIREFRAME) {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            }
+            // Ripristina stato
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
-        else if (modelManager.hasActiveModel()) {
-            // Rendering tradizionale del modello attivo
-            modelManager.updateActiveModel(currentFrame);
 
-            glUseProgram(shader);
-
-            glm::mat4 model = glm::mat4(1.0f);
-            model = glm::translate(model, selectedObjectPosition);
-            model = glm::rotate(model, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
-            model = glm::rotate(model, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::scale(model, modelScale);
-
-            SetUniformMat4(shader, "model", model);
-            SetUniformMat4(shader, "view", view);
-            SetUniformMat4(shader, "projection", projection);
-
-            GLint colorLocation = glGetUniformLocation(shader, "objectColor");
-            if (colorLocation != -1)
-                glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f);
-
-            Model::RenderMode currentMode = static_cast<Model::RenderMode>(currentRenderMode);
-            switch (currentMode)
-            {
-            case Model::RenderMode::WIREFRAME:
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                break;
-            case Model::RenderMode::SOLID_WITH_WIREFRAME:
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-                break;
-            default:
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-                break;
-            }
-
-            modelManager.renderActiveModel();
-
-            if (objectSelected) {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-                glm::mat4 outlineModel = glm::mat4(1.0f);
-                outlineModel = glm::translate(outlineModel, selectedObjectPosition);
-                outlineModel = glm::rotate(outlineModel, glm::radians(mouseControl.rotationX), glm::vec3(1.0f, 0.0f, 0.0f));
-                outlineModel = glm::rotate(outlineModel, glm::radians(mouseControl.rotationY), glm::vec3(0.0f, 1.0f, 0.0f));
-                outlineModel = glm::scale(outlineModel, modelScale * 1.05f);
-
-                SetUniformMat4(shader, "model", outlineModel);
-
-                if (colorLocation != -1)
-                    glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f);
-                modelManager.renderActiveModel();
-
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            }
-
-            if (currentMode == Model::RenderMode::WIREFRAME) {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            }
-        }
+        // SEMPRE renderizza anche i modelli tradizionali (se presenti)
+        renderTraditionalModel(shader, view, projection);
 
         // Generazione frame ImGui
         ImGui_ImplOpenGL3_NewFrame();
@@ -696,37 +730,38 @@ int main() {
         // Pannello per il rendering istanziato
         renderInstanceControlPanel();
 
-        if (!useInstancing) {
-            // Menu di selezione modelli tradizionale
-            if (ImGui::CollapsingHeader("Models", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::Text("Select a model:");
-                std::vector<std::string> modelNames = modelManager.getModelNames();
+        // Menu di selezione modelli tradizionale - SEMPRE VISIBILE
+        if (ImGui::CollapsingHeader("Traditional Models", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("Select a model:");
+            std::vector<std::string> modelNames = modelManager.getModelNames();
 
-                // Pulsante per la selezione dei modelli
-                for (const auto& name : modelNames) {
-                    if (ImGui::Button(name.c_str(), ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
-                        modelManager.setActiveModel(name);
-                        selectedModel = name;
-                        objectSelected = true;
-                        showSelectedModelPanel = true;
+            // Pulsante per la selezione dei modelli
+            for (const auto& name : modelNames) {
+                if (ImGui::Button(name.c_str(), ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+                    modelManager.setActiveModel(name);
+                    selectedModel = name;
+                    objectSelected = true;
+                    showSelectedModelPanel = true;
 
-                        // Sincronizzazione stato del modello
-                        if (modelManager.hasActiveModel()) {
-                            currentRenderMode = static_cast<int>(modelManager.getActiveModel()->getRenderMode());
-                        }
+                    // Deseleziona eventuali istanze
+                    instancedModelManager.deselectAll();
+
+                    // Sincronizzazione stato del modello
+                    if (modelManager.hasActiveModel()) {
+                        currentRenderMode = static_cast<int>(modelManager.getActiveModel()->getRenderMode());
                     }
                 }
+            }
 
-                // Visualizzazione solo griglia
-                if (ImGui::Button("Nessun modello", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
-                    // Deseleziona il modello attivo
-                    modelManager.setActiveModel("");
-                    selectedModel = "";
-                    objectMoving = false;
-                    showSelectedModelPanel = false;
-                    mouseControl.rotationX = 0.0f;
-                    mouseControl.rotationY = 0.0f;
-                }
+            // Visualizzazione solo griglia
+            if (ImGui::Button("Nessun modello", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+                // Deseleziona il modello attivo
+                modelManager.setActiveModel("");
+                selectedModel = "";
+                objectMoving = false;
+                showSelectedModelPanel = false;
+                mouseControl.rotationX = 0.0f;
+                mouseControl.rotationY = 0.0f;
             }
         }
 

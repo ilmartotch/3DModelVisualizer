@@ -1,5 +1,4 @@
-#ifndef PICKING_BUFFER_H
-#define PICKING_BUFFER_H
+#pragma once
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -27,11 +26,16 @@ public:
     // Legge il colore ID al punto specificato
     glm::vec3 readPixel(int x, int y);
 
+    // Verifica se il buffer è stato inizializzato
+    bool isInitialized() const { return m_initialized; }
+
     // Getter
     GLuint getColorTextureId() const { return m_colorTextureId; }
     GLuint getPickingTextureId() const { return m_pickingTextureId; }
     GLuint getDepthTextureId() const { return m_depthTextureId; }
     GLuint getFramebufferId() const { return m_framebufferId; }
+    int getWidth() const { return m_width; }
+    int getHeight() const { return m_height; }
 
 private:
     GLuint m_framebufferId;     // ID del FBO
@@ -39,10 +43,7 @@ private:
     GLuint m_pickingTextureId;  // Texture per ID colore (picking)
     GLuint m_depthTextureId;    // Texture per depth buffer
 
-    int m_width;
-    int m_height;
-
-    bool m_initialized;
+    int m_width = 0;                // Larghezza del buffer
+    int m_height = 0;               // Altezza del buffer
+    bool m_initialized = 0;         // Flag di inizializzazione
 };
-
-#endif // PICKING_BUFFER_H

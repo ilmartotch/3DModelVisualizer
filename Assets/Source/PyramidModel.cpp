@@ -101,3 +101,12 @@ void PyramidModel::cleanup() {
 	glDeleteBuffers(1, &m_ebo);
 	m_initialized = false;
 }
+
+void PyramidModel::setupVertexAttributes() {
+	// Posizioni (location 0)
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+	glEnableVertexAttribArray(0);
+	// Colori (location 1)
+	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+	glEnableVertexAttribArray(1);
+}

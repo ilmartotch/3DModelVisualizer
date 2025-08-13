@@ -39,4 +39,9 @@ public:
 private:
 	std::map<std::string, std::shared_ptr<Model>> m_models;
 	std::shared_ptr<Model> m_activeModel;
+	std::shared_ptr<Model> getModel(const std::string& name) const {
+		auto it = m_models.find(name);
+		return (it != m_models.end()) ? it->second : nullptr;
+	}
+
 };

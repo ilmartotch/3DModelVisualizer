@@ -13,4 +13,5 @@ public:
 private:
 	int m_sectors;
 	int m_stacks;
+	virtual void setupVertexAttributes() override;
 };

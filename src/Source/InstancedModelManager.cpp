@@ -31,19 +31,22 @@ void InstancedModelManager::initialize(std::shared_ptr<Model> baseModel) {
     glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)0);
     glVertexAttribDivisor(3, 1);  // L'attributo avanza ogni istanza
 
-    // Location 4 = seconda riga
+    // Location 4 = seconda riga - FIX per C4312
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(vec4Size));
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
+        reinterpret_cast<void*>(static_cast<uintptr_t>(vec4Size)));
     glVertexAttribDivisor(4, 1);
 
-    // Location 5 = terza riga
+    // Location 5 = terza riga - FIX per C4312
     glEnableVertexAttribArray(5);
-    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(2 * vec4Size));
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
+        reinterpret_cast<void*>(static_cast<uintptr_t>(2 * vec4Size)));
     glVertexAttribDivisor(5, 1);
 
-    // Location 6 = quarta riga
+    // Location 6 = quarta riga - FIX per C4312
     glEnableVertexAttribArray(6);
-    glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4), (void*)(3 * vec4Size));
+    glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
+        reinterpret_cast<void*>(static_cast<uintptr_t>(3 * vec4Size)));
     glVertexAttribDivisor(6, 1);
 
     glBindVertexArray(0);
@@ -62,18 +65,17 @@ void InstancedModelManager::cleanup() {
 unsigned int InstancedModelManager::addInstance(const glm::vec3& position, const glm::vec3& rotation, const glm::vec3& scale) {
     unsigned int instanceId = m_nextInstanceId++;
 
-    auto& instance = m_instances[instanceId];
-    instance.instanceId = instanceId;
-    instance.position = position;
-    instance.rotation = rotation;
-    instance.scale = scale;
-    instance.isSelected = false;
+    // FIX per C2512: Usa il costruttore esplicito
+    ModelInstance instance(instanceId, position, rotation, scale);
 
     // Genera un colore univoco per il picking
     instance.idColor = generateColorFromId(instanceId);
 
     // Aggiorna la matrice modello
     instance.updateModelMatrix();
+
+    // Inserisci l'istanza nella mappa
+    m_instances[instanceId] = instance;
 
     // Aggiorna il buffer delle matrici
     updateMatrixBuffer();
@@ -201,6 +203,25 @@ void InstancedModelManager::render(GLuint shader) {
     m_baseModel->renderInstanced(m_instances.size());
 }
 
+void InstancedModelManager::render(GLuint shader, const glm::mat4& view, const glm::mat4& projection) {
+    if (m_instances.empty() || !m_baseModel) return;
+
+    // Attiva lo shader
+    glUseProgram(shader);
+
+    // Imposta le matrici di view e projection
+    GLint viewLoc = glGetUniformLocation(shader, "view");
+    GLint projLoc = glGetUniformLocation(shader, "projection");
+
+    if (viewLoc != -1)
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    if (projLoc != -1)
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    // Esegui il rendering istanziato
+    m_baseModel->renderInstanced(m_instances.size());
+}
+
 void InstancedModelManager::renderForPicking(GLuint pickingShader) {
     if (m_instances.empty() || !m_baseModel) return;
 
@@ -208,20 +229,53 @@ void InstancedModelManager::renderForPicking(GLuint pickingShader) {
     glUseProgram(pickingShader);
 
     // Per ogni istanza, invia il suo colore ID univoco e renderizza
-    for (size_t i = 0; i < m_instances.size(); i++) {
-        auto it = m_instances.begin();
-        std::advance(it, i);
+    for (const auto& pair : m_instances) {
+        const auto& instance = pair.second;
 
         // Imposta l'ID colore per questa istanza
         glUniform3f(glGetUniformLocation(pickingShader, "idColor"),
-            it->second.idColor.r,
-            it->second.idColor.g,
-            it->second.idColor.b);
+            instance.idColor.r,
+            instance.idColor.g,
+            instance.idColor.b);
 
         // Imposta la matrice modello per questa istanza
         glUniformMatrix4fv(glGetUniformLocation(pickingShader, "model"),
             1, GL_FALSE,
-            glm::value_ptr(it->second.modelMatrix));
+            glm::value_ptr(instance.modelMatrix));
+
+        // Renderizza l'istanza
+        m_baseModel->render();
+    }
+}
+
+void InstancedModelManager::renderForPicking(GLuint pickingShader, const glm::mat4& view, const glm::mat4& projection) {
+    if (m_instances.empty() || !m_baseModel) return;
+
+    // Attiva lo shader di picking
+    glUseProgram(pickingShader);
+
+    // Imposta le matrici di view e projection
+    GLint viewLoc = glGetUniformLocation(pickingShader, "view");
+    GLint projLoc = glGetUniformLocation(pickingShader, "projection");
+
+    if (viewLoc != -1)
+        glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+    if (projLoc != -1)
+        glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+    // Per ogni istanza, invia il suo colore ID univoco e renderizza
+    for (const auto& pair : m_instances) {
+        const auto& instance = pair.second;
+
+        // Imposta l'ID colore per questa istanza
+        GLint idColorLoc = glGetUniformLocation(pickingShader, "idColor");
+        if (idColorLoc != -1)
+            glUniform3fv(idColorLoc, 1, glm::value_ptr(instance.idColor));
+
+        // Imposta la matrice modello per questa istanza
+        GLint modelLoc = glGetUniformLocation(pickingShader, "model");
+        if (modelLoc != -1)
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(instance.modelMatrix));
 
         // Renderizza l'istanza
         m_baseModel->render();

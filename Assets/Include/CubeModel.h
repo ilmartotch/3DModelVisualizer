@@ -9,4 +9,7 @@ public:
 	virtual void initialize() override;
 	virtual void render() override;
 	virtual void cleanup() override;
+
+protected:
+	virtual void setupVertexAttributes() override;
 };

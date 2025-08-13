@@ -55,6 +55,10 @@ void CubeModel::initialize() {
         1, 0, 4
     };
 
+	//metodo helper della classe base per la configurazione dei buffer
+	setupBuffers();
+	m_initialized = true;
+
     // Creazione dei buffer OpenGL
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
@@ -79,6 +83,16 @@ void CubeModel::initialize() {
     glBindVertexArray(0);
 
     m_initialized = true;
+}
+
+void CubeModel::setupVertexAttributes() {
+    // Posizioni (location 0)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Colori (location 1)
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 }
 
 void CubeModel::render() {
@@ -117,9 +131,10 @@ void CubeModel::render() {
 }
 
 void CubeModel::cleanup() {
-	if (!m_initialized) return;
-	glDeleteVertexArrays(1, &m_vao);
-	glDeleteBuffers(1, &m_vbo);
-	glDeleteBuffers(1, &m_ebo);
-	m_initialized = false;
+    if (!m_initialized) return;
+
+    // Usa il metodo helper della classe base per pulire i buffer
+    cleanupBuffers();
+
+    m_initialized = false;
 }

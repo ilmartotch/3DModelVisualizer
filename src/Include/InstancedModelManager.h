@@ -20,6 +20,14 @@ struct ModelInstance {
     glm::vec3 idColor;        // Colore univoco per il picking
     bool isSelected;          // Flag di selezione
 
+	// Costruttore per inizializzare un'istanza
+	ModelInstance()
+		: instanceId(0), position(0.0f), rotation(0.0f), scale(1.0f),
+		modelMatrix(1.0f), idColor(0.0f), isSelected(false) {
+		updateModelMatrix();
+	}
+
+	// Costruttore con parametri per inizializzare un'istanza
     ModelInstance(unsigned int id, const glm::vec3& pos = glm::vec3(0.0f),
         const glm::vec3& rot = glm::vec3(0.0f),
         const glm::vec3& sc = glm::vec3(1.0f))
@@ -68,7 +76,9 @@ public:
     // Rendering
     void updateMatrixBuffer();
     void render(GLuint shader);
+	void render(GLuint shader, const glm::mat4& view, const glm::mat4& projection);
     void renderForPicking(GLuint pickingShader);
+	void renderForPicking(GLuint pickingShader, const glm::mat4& view, const glm::mat4& projection);
 
     // Picking
     unsigned int getInstanceIdFromColor(const glm::vec3& color);
@@ -77,6 +87,7 @@ public:
     ModelInstance* getInstance(unsigned int instanceId);
     size_t getInstanceCount() const { return m_instances.size(); }
     std::shared_ptr<Model> getBaseModel() const { return m_baseModel; }
+	bool isInitialized() const { return m_baseModel != nullptr; }
 
 private:
     std::shared_ptr<Model> m_baseModel;                  // Modello base condiviso da tutte le istanze
@@ -89,6 +100,10 @@ private:
 
     // Genera un colore univoco basato sull'ID
     glm::vec3 generateColorFromId(unsigned int id);
+
+	void handlePickingResult(const glm::vec3 & idColor);
+    void renderTraditionlModelOutline(GLuint shader, const glm::mat4& model);
+    void rendrSelectedInstanceOutline(GLuint shader);
 };
 
 #endif // INSTANCED_MODEL_MANAGER_H

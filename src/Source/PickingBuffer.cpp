@@ -1,9 +1,7 @@
 #include "../Include/PickingBuffer.h"
 #include <iostream>
 
-PickingBuffer::PickingBuffer()
-    : m_framebufferId(0), m_colorTextureId(0), m_pickingTextureId(0), m_depthTextureId(0),
-    m_width(0), m_height(0), m_initialized(false) {
+PickingBuffer::PickingBuffer(){
 }
 
 PickingBuffer::~PickingBuffer() {
@@ -56,9 +54,33 @@ bool PickingBuffer::initialize(int width, int height) {
     GLenum drawBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
     glDrawBuffers(2, drawBuffers);
 
-    // Verifica completezza
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "Errore: Framebuffer non completo!" << std::endl;
+    // Verifica completezza del framebuffer
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Errore: Framebuffer di picking non completo! Status: " << status << std::endl;
+
+        // Log dettagliato dell'errore
+        switch (status) {
+        case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT:
+            std::cerr << "GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT" << std::endl;
+            break;
+        case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT:
+            std::cerr << "GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT" << std::endl;
+            break;
+        case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER:
+            std::cerr << "GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER" << std::endl;
+            break;
+        case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER:
+            std::cerr << "GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER" << std::endl;
+            break;
+        case GL_FRAMEBUFFER_UNSUPPORTED:
+            std::cerr << "GL_FRAMEBUFFER_UNSUPPORTED" << std::endl;
+            break;
+        default:
+            std::cerr << "Errore sconosciuto del framebuffer" << std::endl;
+            break;
+        }
+
         cleanup();
         return false;
     }
@@ -91,6 +113,8 @@ void PickingBuffer::cleanup() {
         m_framebufferId = 0;
     }
 
+    m_width = 0;
+    m_height = 0;
     m_initialized = false;
 }
 
@@ -100,8 +124,14 @@ void PickingBuffer::resize(int width, int height) {
     }
 
     // Reinizializza con le nuove dimensioni
+    bool wasInitialized = m_initialized;
     cleanup();
-    initialize(width, height);
+
+    if (wasInitialized) {
+        if (!initialize(width, height)) {
+            std::cerr << "Errore nel ridimensionamento del buffer di picking!" << std::endl;
+        }
+    }
 }
 
 void PickingBuffer::bind() {
@@ -112,6 +142,10 @@ void PickingBuffer::bind() {
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_framebufferId);
     glViewport(0, 0, m_width, m_height);
+
+    // Assicurati che stiamo scrivendo su entrambi i color attachments
+    GLenum drawBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+    glDrawBuffers(2, drawBuffers);
 }
 
 void PickingBuffer::unbind() {
@@ -119,8 +153,16 @@ void PickingBuffer::unbind() {
 }
 
 void PickingBuffer::clear() {
-    if (!m_initialized) return;
+    if (!m_initialized) {
+        std::cerr << "Errore: Tentativo di pulire un picking buffer non inizializzato!" << std::endl;
+        return;
+    }
 
+    // Salva il framebuffer corrente
+    GLint currentFramebuffer;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFramebuffer);
+
+    // Bind del nostro framebuffer
     bind();
 
     // Cancella entrambi i buffer di colore con colore nero (nessun oggetto)
@@ -135,23 +177,31 @@ void PickingBuffer::clear() {
     // Cancella il buffer di profondità
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    unbind();
+    // Ripristina il framebuffer precedente
+    glBindFramebuffer(GL_FRAMEBUFFER, currentFramebuffer);
 }
 
 glm::vec3 PickingBuffer::readPixel(int x, int y) {
     if (!m_initialized) {
+        std::cerr << "Errore: Tentativo di leggere da un picking buffer non inizializzato!" << std::endl;
         return glm::vec3(0.0f);
     }
 
     // Inverte la coordinata Y per adattarsi alle coordinate OpenGL
-    y = m_height - y;
+    y = m_height - y - 1;
 
     // Verifica che le coordinate siano all'interno del framebuffer
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
+        std::cerr << "Coordinate fuori dai limiti: (" << x << ", " << y << ") per buffer "
+            << m_width << "x" << m_height << std::endl;
         return glm::vec3(0.0f);
     }
 
-    // Bind del framebuffer
+    // Salva il framebuffer corrente
+    GLint currentFramebuffer;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFramebuffer);
+
+    // Bind del framebuffer di picking
     glBindFramebuffer(GL_FRAMEBUFFER, m_framebufferId);
 
     // Specifica che vogliamo leggere dal secondo attachment (ID buffer)
@@ -161,8 +211,14 @@ glm::vec3 PickingBuffer::readPixel(int x, int y) {
     float pixelData[4];
     glReadPixels(x, y, 1, 1, GL_RGBA, GL_FLOAT, pixelData);
 
-    // Ripristina il framebuffer di default
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // Controlla errori OpenGL
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        std::cerr << "Errore OpenGL durante la lettura del pixel: " << error << std::endl;
+    }
+
+    // Ripristina il framebuffer precedente
+    glBindFramebuffer(GL_FRAMEBUFFER, currentFramebuffer);
 
     // Restituisce i primi 3 componenti come vettore (RGB)
     return glm::vec3(pixelData[0], pixelData[1], pixelData[2]);

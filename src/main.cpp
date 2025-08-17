@@ -26,7 +26,7 @@
 #include "../Assets/Include/PyramidModel.h"
 #include "Include/Grid.h"
 #include "Include/ModelManager.h"
-#include <SceneManager.h>
+#include "Include/SceneManager.h"
 
 // Forward declarations
 void handlePickingResult(const glm::vec3& idColor);
@@ -43,6 +43,10 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void initializePickingSystem();
 void initializeInstancedRendering();
 void renderInstanceControlPanel();
+void handlePickingResultUnified(const glm::vec3& idColor);
+void processMousePickingUnified(int x, int y);
+void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection);
+void renderSceneControlPanel();
 
 // Variabili window
 int windoWidth = 800;
@@ -63,6 +67,12 @@ glm::vec3 modelScale(1.0f, 1.0f, 1.0f);
 bool objectMoving = false;
 glm::vec3 lastMousePos;
 float moveSpeed = 0.1f;
+bool objectSelected = false;
+glm::vec3 selectedObjectPosition = glm::vec3(0.0f, 0.5f, 0.0f);
+
+// Instanziato
+bool useInstancing = false;
+InstancedModelManager instancedModelManager;
 
 // Manager per modelli istanziati e picking
 PickingBuffer pickingBuffer;
@@ -94,14 +104,15 @@ enum class MoveAxis {
     Z_AXIS
 };
 
-SceneManager scenaManager(modelManager);
-
 MoveAxis currentMoveAxis = MoveAxis::NONE;
 
 MouseControl mouseControl;
 
-// Crea un modelManager per la gestione dei modelli
+// ModelManager per la gestione dei modelli
 ModelManager modelManager;
+
+// SceneManager per la gestione della scena
+SceneManager sceneManager(modelManager);
 
 // Ridimensionamento della finestra
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
@@ -333,7 +344,8 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
 
             // Se il picking è abilitato, gestiamo la selezione tramite il buffer di ID
             if (pickingEnabled) {
-                processMousePicking(static_cast<int>(xpos), static_cast<int>(ypos));
+                // Usiamo il nuovo metodo unificato di picking
+                processMousePickingUnified(static_cast<int>(xpos), static_cast<int>(ypos));
             }
 
             // Controlla se ALT è premuto per modalità orbita
@@ -342,8 +354,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
                 mouseControl.isOrbiting = true;
                 mouseControl.isPressed = false; // Disabilita la rotazione normale
             }
-            else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS &&
-                (modelManager.hasActiveModel() || objectSelected)) {
+            else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && objectSelected) {
                 objectMoving = true;
 
                 if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
@@ -362,7 +373,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
                 lastMousePos = glm::vec3((float)xpos, (float)ypos, 0.0f);
             }
             else {
-                if (!pickingEnabled && modelManager.hasActiveModel()) {
+                if (!pickingEnabled && objectSelected) {
                     objectSelected = true;
                 }
                 mouseControl.isOrbiting = false;
@@ -396,8 +407,7 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
         glm::vec3 mouseDelta = currentMousePos - lastMousePos;
 
         // Aggiorna la posizione dell'oggetto selezionato
-        switch (currentMoveAxis)
-        {
+        switch (currentMoveAxis) {
         case MoveAxis::X_AXIS:
             selectedObjectPosition.x += mouseDelta.x * moveSpeed;
             break;
@@ -415,8 +425,13 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 
         lastMousePos = currentMousePos;
 
-        // Se stiamo usando il rendering istanziato, aggiorniamo la posizione dell'istanza
-        if (useInstancing && objectSelected) {
+        // Aggiorna la posizione nell'oggetto selezionato nel SceneManager
+        auto selectedObj = sceneManager.getSelectedObject();
+        if (selectedObj) {
+            sceneManager.updateObjectPosition(selectedObj->getId(), selectedObjectPosition);
+        }
+        // Supporto legacy per istanze
+        else if (useInstancing && objectSelected) {
             ModelInstance* instance = instancedModelManager.getSelectedInstance();
             if (instance) {
                 instancedModelManager.updateInstancePosition(instance->instanceId, selectedObjectPosition);
@@ -430,8 +445,14 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
         mouseControl.rotationX = fmodf(mouseControl.rotationX, 360.0f);
         mouseControl.rotationY = fmodf(mouseControl.rotationY, 360.0f);
 
-        // Aggiorna la rotazione dell'istanza selezionata se stiamo usando il rendering istanziato
-        if (useInstancing && objectSelected) {
+        // Aggiorna la rotazione dell'oggetto selezionato nel SceneManager
+        auto selectedObj = sceneManager.getSelectedObject();
+        if (selectedObj) {
+            sceneManager.updateObjectRotation(selectedObj->getId(),
+                glm::vec3(mouseControl.rotationX, mouseControl.rotationY, 0.0f));
+        }
+        // Supporto legacy per istanze
+        else if (useInstancing && objectSelected) {
             ModelInstance* instance = instancedModelManager.getSelectedInstance();
             if (instance) {
                 instancedModelManager.updateInstanceRotation(instance->instanceId,
@@ -558,6 +579,182 @@ void renderInstanceControlPanel() {
     }
 }
 
+// Implementazione delle nuove funzioni per il SceneManager
+void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection) {
+    // Renderizza tutti gli oggetti nella scena
+    sceneManager.renderAll(shader, view, projection,
+        static_cast<Model::RenderMode>(currentRenderMode));
+}
+
+void processMousePickingUnified(int x, int y) {
+    if (!pickingEnabled || !pickingBuffer.isInitialized()) return;
+
+    pickingBuffer.bind();
+    pickingBuffer.clear();
+
+    float aspect = static_cast<float>(windoWidth) / static_cast<float>(windowHeight);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    glm::mat4 view = glm::lookAt(
+        mouseControl.camPos,
+        glm::vec3(0.0f, 0.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f)
+    );
+
+    glUseProgram(pickingShader);
+    SetUniformMat4(pickingShader, "view", view);
+    SetUniformMat4(pickingShader, "projection", projection);
+
+    // Renderizza tutti gli oggetti per picking
+    sceneManager.renderForPicking(pickingShader, view, projection);
+
+    // Supporto legacy per istanze
+    if (useInstancing && instancedModelManager.isInitialized()) {
+        instancedModelManager.renderForPicking(pickingShader, view, projection);
+    }
+
+    glm::vec3 idColor = pickingBuffer.readPixel(x, y);
+    pickingBuffer.unbind();
+    glViewport(0, 0, windoWidth, windowHeight);
+
+    handlePickingResultUnified(idColor);
+}
+
+void handlePickingResultUnified(const glm::vec3& idColor) {
+    // Prima controlla se è un oggetto del SceneManager
+    unsigned int objectId = sceneManager.colorToId(idColor);
+
+    if (objectId > 0) {
+        sceneManager.selectObject(objectId);
+        objectSelected = true;
+        showSelectedModelPanel = true;
+
+        auto selected = sceneManager.getSelectedObject();
+        if (selected) {
+            selectedObjectPosition = selected->getPosition();
+            modelScale = selected->getScale();
+            mouseControl.rotationX = selected->getRotation().x;
+            mouseControl.rotationY = selected->getRotation().y;
+        }
+
+        // Deseleziona eventuali istanze legacy
+        if (useInstancing) {
+            instancedModelManager.deselectAll();
+        }
+    }
+    // Poi prova con il sistema legacy delle istanze
+    else if (useInstancing) {
+        unsigned int instanceId = instancedModelManager.getInstanceIdFromColor(idColor);
+        if (instanceId > 0) {
+            // Un'istanza legacy è stata selezionata
+            instancedModelManager.selectInstance(instanceId);
+            objectSelected = true;
+            showSelectedModelPanel = true;
+
+            // Ottieni i dati dell'istanza selezionata
+            ModelInstance* instance = instancedModelManager.getSelectedInstance();
+            if (instance) {
+                selectedObjectPosition = instance->position;
+                modelScale = instance->scale;
+                mouseControl.rotationX = instance->rotation.x;
+                mouseControl.rotationY = instance->rotation.y;
+            }
+
+            // Deseleziona gli oggetti del SceneManager
+            sceneManager.deselectAll();
+        }
+        else {
+            // Nessun oggetto selezionato
+            sceneManager.deselectAll();
+            instancedModelManager.deselectAll();
+            objectSelected = false;
+            showSelectedModelPanel = false;
+        }
+    }
+    else {
+        // Nessun oggetto selezionato
+        sceneManager.deselectAll();
+        objectSelected = false;
+        showSelectedModelPanel = false;
+    }
+}
+
+void renderSceneControlPanel() {
+    if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+        // Pannello per aggiungere oggetti
+        ImGui::Text("Add New Object:");
+        std::vector<std::string> modelNames = modelManager.getModelNames();
+
+        static int selectedModelIndex = 0;
+        if (ImGui::Combo("Model Type", &selectedModelIndex,
+            [](void* data, int idx, const char** out_text) {
+                auto& names = *static_cast<std::vector<std::string>*>(data);
+                if (idx >= 0 && idx < names.size()) {
+                    *out_text = names[idx].c_str();
+                    return true;
+                }
+                return false;
+            }, &modelNames, modelNames.size())) {
+        }
+
+        if (ImGui::Button("Add Object", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30)) &&
+            selectedModelIndex < modelNames.size()) {
+            // Genera posizione casuale
+            float randX = (float)rand() / RAND_MAX * 4.0f - 2.0f;
+            float randZ = (float)rand() / RAND_MAX * 4.0f - 2.0f;
+
+            auto newObj = sceneManager.addObject(modelNames[selectedModelIndex],
+                glm::vec3(randX, 0.5f, randZ));
+            if (newObj) {
+                sceneManager.selectObject(newObj->getId());
+                objectSelected = true;
+                showSelectedModelPanel = true;
+                selectedObjectPosition = newObj->getPosition();
+                modelScale = newObj->getScale();
+            }
+        }
+
+        ImGui::Separator();
+
+        // Lista oggetti nella scena
+        ImGui::Text("Objects in Scene (%zu):", sceneManager.getObjectCount());
+
+        for (const auto& obj : sceneManager.getObjects()) {
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+            if (obj->getSelected()) {
+                flags |= ImGuiTreeNodeFlags_Selected;
+            }
+
+            ImGui::TreeNodeEx(obj->getName().c_str(), flags);
+
+            if (ImGui::IsItemClicked()) {
+                sceneManager.selectObject(obj->getId());
+                objectSelected = true;
+                showSelectedModelPanel = true;
+                selectedObjectPosition = obj->getPosition();
+                modelScale = obj->getScale();
+                mouseControl.rotationX = obj->getRotation().x;
+                mouseControl.rotationY = obj->getRotation().y;
+            }
+
+            // Menu contestuale
+            if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("Delete")) {
+                    sceneManager.removeObject(obj->getId());
+                    if (obj->getSelected()) {
+                        objectSelected = false;
+                        showSelectedModelPanel = false;
+                    }
+                }
+                ImGui::EndPopup();
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::Checkbox("Enable Picking", &pickingEnabled);
+    }
+}
+
 int main() {
     // Working directory
     std::cout << std::filesystem::current_path() << std::endl;
@@ -610,6 +807,11 @@ int main() {
     Grid grid(20, 0.5f);
     grid.initialize();
 
+    // Aggiungi alcuni oggetti iniziali alla scena
+    sceneManager.addObject("Cube", glm::vec3(-1.5f, 0.5f, 0.0f));
+    sceneManager.addObject("Sphere", glm::vec3(0.0f, 0.5f, 0.0f));
+    sceneManager.addObject("Pyramid", glm::vec3(1.5f, 0.5f, 0.0f));
+
     // Loop temporale
     float timeValue = 0.0f;
     std::string selectedModel = "";
@@ -651,18 +853,7 @@ int main() {
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
         glm::mat4 view;
 
-        // Determina la posizione della telecamera
-        glm::vec3 cameraPosition;
-        if (mouseControl.isOrbiting) {
-            // In modalità orbitale, la posizione della telecamera viene calcolata in base agli angoli orbitali
-            cameraPosition = mouseControl.camPos;
-        }
-        else {
-            // In modalità normale, usa una posizione fissa
-            cameraPosition = glm::vec3(0.0f, mouseControl.cameraHeight, mouseControl.cameraDistance);
-        }
-
-        // Usa la nuova posizione della telecamera
+        // Usa la posizione della telecamera calcolata
         view = glm::lookAt(
             mouseControl.camPos,
             glm::vec3(0.0f, 0.0f, 0.0f),
@@ -679,9 +870,10 @@ int main() {
 
         grid.render(gridShader);
 
-        // *** RENDERING UNIFICATO - ORA SUPPORTA ENTRAMBI I SISTEMI ***
+        // Renderizza tutti gli oggetti della scena
+        renderScene(shader, view, projection);
 
-        // Renderizza le istanze se abilitate
+        // Supporto legacy per rendering istanziato
         if (useInstancing && instancedModelManager.isInitialized()) {
             glUseProgram(shader);
             SetUniformMat4(shader, "view", view);
@@ -706,9 +898,6 @@ int main() {
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 
-        // SEMPRE renderizza anche i modelli tradizionali (se presenti)
-        renderTraditionalModel(shader, view, projection);
-
         // Generazione frame ImGui
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -727,43 +916,11 @@ int main() {
         ImGui::Text("3D Modeler");
         ImGui::Separator();
 
-        // Pannello per il rendering istanziato
+        // Pannello principale di controllo della scena
+        renderSceneControlPanel();
+
+        // Supporto legacy per rendering istanziato
         renderInstanceControlPanel();
-
-        // Menu di selezione modelli tradizionale - SEMPRE VISIBILE
-        if (ImGui::CollapsingHeader("Traditional Models", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Text("Select a model:");
-            std::vector<std::string> modelNames = modelManager.getModelNames();
-
-            // Pulsante per la selezione dei modelli
-            for (const auto& name : modelNames) {
-                if (ImGui::Button(name.c_str(), ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
-                    modelManager.setActiveModel(name);
-                    selectedModel = name;
-                    objectSelected = true;
-                    showSelectedModelPanel = true;
-
-                    // Deseleziona eventuali istanze
-                    instancedModelManager.deselectAll();
-
-                    // Sincronizzazione stato del modello
-                    if (modelManager.hasActiveModel()) {
-                        currentRenderMode = static_cast<int>(modelManager.getActiveModel()->getRenderMode());
-                    }
-                }
-            }
-
-            // Visualizzazione solo griglia
-            if (ImGui::Button("Nessun modello", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
-                // Deseleziona il modello attivo
-                modelManager.setActiveModel("");
-                selectedModel = "";
-                objectMoving = false;
-                showSelectedModelPanel = false;
-                mouseControl.rotationX = 0.0f;
-                mouseControl.rotationY = 0.0f;
-            }
-        }
 
         // Modalità di rendering
         ImGui::Separator();
@@ -771,8 +928,9 @@ int main() {
             static const char* renderModes[] = { "Solid", "Wireframe", "Solid + Wireframe" };
             if (ImGui::Combo("Render Mode", &currentRenderMode, renderModes, IM_ARRAYSIZE(renderModes)))
             {
-                if (!useInstancing && modelManager.hasActiveModel()) {
-                    Model::RenderMode mode = static_cast<Model::RenderMode>(currentRenderMode);
+                // Applicare il cambiamento di modalità di rendering al modello attivo
+                Model::RenderMode mode = static_cast<Model::RenderMode>(currentRenderMode);
+                if (modelManager.hasActiveModel()) {
                     modelManager.setActiveModelRenderMode(mode);
                 }
             }
@@ -789,9 +947,122 @@ int main() {
         // Dati modello selezionato
         if (objectSelected && showSelectedModelPanel) {
             ImGui::Separator();
-            if (ImGui::CollapsingHeader("Selected Model", ImGuiTreeNodeFlags_DefaultOpen)) {
-                if (useInstancing) {
-                    // Panel per istanza selezionata
+            if (ImGui::CollapsingHeader("Selected Object", ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto selectedObj = sceneManager.getSelectedObject();
+
+                if (selectedObj) {
+                    ImGui::Text("Selected Object: %s", selectedObj->getName().c_str());
+
+                    // Posizione
+                    ImGui::Separator();
+                    ImGui::Text("Position:");
+
+                    glm::vec3 position = selectedObj->getPosition();
+                    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
+                    bool posChanged = false;
+                    posChanged |= ImGui::InputFloat("X##pos", &position.x, 0.1f);
+                    ImGui::SameLine();
+                    posChanged |= ImGui::InputFloat("Y##pos", &position.y, 0.1f);
+                    ImGui::SameLine();
+                    posChanged |= ImGui::InputFloat("Z##pos", &position.z, 0.1f);
+                    ImGui::PopItemWidth();
+
+                    posChanged |= ImGui::SliderFloat("Pos X", &position.x, -10.0f, 10.0f);
+                    posChanged |= ImGui::SliderFloat("Pos Y", &position.y, -10.0f, 10.0f);
+                    posChanged |= ImGui::SliderFloat("Pos Z", &position.z, -10.0f, 10.0f);
+
+                    if (posChanged) {
+                        selectedObjectPosition = position;
+                        sceneManager.updateObjectPosition(selectedObj->getId(), position);
+                    }
+
+                    if (ImGui::Button("Reset Position", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
+                        position = glm::vec3(0.0f, 0.5f, 0.0f);
+                        selectedObjectPosition = position;
+                        sceneManager.updateObjectPosition(selectedObj->getId(), position);
+                    }
+
+                    // Scala
+                    ImGui::Separator();
+                    ImGui::Text("Scale");
+
+                    glm::vec3 scale = selectedObj->getScale();
+                    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
+                    bool scaleChanged = false;
+                    scaleChanged |= ImGui::InputFloat("X##scale", &scale.x, 0.1f);
+                    ImGui::SameLine();
+                    scaleChanged |= ImGui::InputFloat("Y##scale", &scale.y, 0.1f);
+                    ImGui::SameLine();
+                    scaleChanged |= ImGui::InputFloat("Z##scale", &scale.z, 0.1f);
+                    ImGui::PopItemWidth();
+
+                    // Checkbox per mantenere le proporzioni
+                    static bool maintainProportions = true;
+                    ImGui::Checkbox("Maintain proportions", &maintainProportions);
+
+                    // Se mantiene le proporzioni, aggiorna tutti i valori quando uno cambia
+                    if (maintainProportions && scaleChanged) {
+                        static float lastScaleX = 1.0f;
+                        static float lastScaleY = 1.0f;
+                        static float lastScaleZ = 1.0f;
+
+                        if (scale.x != lastScaleX) {
+                            float ratio = scale.x / lastScaleX;
+                            scale.y *= ratio;
+                            scale.z *= ratio;
+                        }
+                        else if (scale.y != lastScaleY) {
+                            float ratio = scale.y / lastScaleY;
+                            scale.x *= ratio;
+                            scale.z *= ratio;
+                        }
+                        else if (scale.z != lastScaleZ) {
+                            float ratio = scale.z / lastScaleZ;
+                            scale.x *= ratio;
+                            scale.y *= ratio;
+                        }
+
+                        lastScaleX = scale.x;
+                        lastScaleY = scale.y;
+                        lastScaleZ = scale.z;
+                    }
+
+                    if (scaleChanged) {
+                        modelScale = scale;
+                        sceneManager.updateObjectScale(selectedObj->getId(), scale);
+                    }
+
+                    if (ImGui::Button("Reset Scale", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
+                        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+                        modelScale = scale;
+                        sceneManager.updateObjectScale(selectedObj->getId(), scale);
+                    }
+
+                    // Rotazione
+                    ImGui::Separator();
+                    ImGui::Text("Rotation");
+
+                    glm::vec3 rotation = selectedObj->getRotation();
+                    bool rotChanged = false;
+                    rotChanged |= ImGui::SliderFloat("Rot X", &rotation.x, 0.0f, 360.0f);
+                    rotChanged |= ImGui::SliderFloat("Rot Y", &rotation.y, 0.0f, 360.0f);
+                    rotChanged |= ImGui::SliderFloat("Rot Z", &rotation.z, 0.0f, 360.0f);
+
+                    if (rotChanged) {
+                        mouseControl.rotationX = rotation.x;
+                        mouseControl.rotationY = rotation.y;
+                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
+                    }
+
+                    if (ImGui::Button("Reset Rotation", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
+                        rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+                        mouseControl.rotationX = 0.0f;
+                        mouseControl.rotationY = 0.0f;
+                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
+                    }
+                }
+                // Supporto per istanze legacy
+                else if (useInstancing) {
                     ModelInstance* instance = instancedModelManager.getSelectedInstance();
                     if (instance) {
                         ImGui::Text("Selected Instance ID: %u", instance->instanceId);
@@ -901,76 +1172,6 @@ int main() {
                         }
                     }
                 }
-                else {
-                    // Panel tradizionale per il modello selezionato
-                    ImGui::Text("Selected Model: %s", selectedModel.c_str());
-
-                    ImGui::Separator();
-                    ImGui::Text("Position:");
-
-                    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-                    ImGui::InputFloat("X##pos", &selectedObjectPosition.x, 0.1f);
-                    ImGui::SameLine();
-                    ImGui::InputFloat("Y##pos", &selectedObjectPosition.y, 0.1f);
-                    ImGui::SameLine();
-                    ImGui::InputFloat("Z##pos", &selectedObjectPosition.z, 0.1f);
-                    ImGui::PopItemWidth();
-
-                    ImGui::SliderFloat("Pos X", &selectedObjectPosition.x, -10.0f, 10.0f);
-                    ImGui::SliderFloat("Pos Y", &selectedObjectPosition.y, -10.0f, 10.0f);
-                    ImGui::SliderFloat("Pos Z", &selectedObjectPosition.z, -10.0f, 10.0f);
-
-                    if (ImGui::Button("Reset Position", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
-                        selectedObjectPosition = glm::vec3(0.0f, 0.5f, 0.0f);
-                    }
-
-                    // Sezione dimensione
-                    ImGui::Separator();
-                    ImGui::Text("Scale");
-
-                    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-                    ImGui::InputFloat("X##scale", &modelScale.x, 0.1f);
-                    ImGui::SameLine();
-                    ImGui::InputFloat("Y##scale", &modelScale.y, 0.1f);
-                    ImGui::SameLine();
-                    ImGui::InputFloat("Z##scale", &modelScale.z, 0.1f);
-                    ImGui::PopItemWidth();
-
-                    // Checkbox per mantenere le proporzioni
-                    static bool maintainProportions = true;
-                    ImGui::Checkbox("Maintain proportions", &maintainProportions);
-
-                    // Se mantiene le proporzioni, aggiorna tutti i valori quando uno cambia
-                    if (maintainProportions) {
-                        static float lastScaleX = 1.0f;
-                        static float lastScaleY = 1.0f;
-                        static float lastScaleZ = 1.0f;
-
-                        if (modelScale.x != lastScaleX) {
-                            float ratio = modelScale.x / lastScaleX;
-                            modelScale.y *= ratio;
-                            modelScale.z *= ratio;
-                        }
-                        else if (modelScale.y != lastScaleY) {
-                            float ratio = modelScale.y / lastScaleY;
-                            modelScale.x *= ratio;
-                            modelScale.z *= ratio;
-                        }
-                        else if (modelScale.z != lastScaleZ) {
-                            float ratio = modelScale.z / lastScaleZ;
-                            modelScale.x *= ratio;
-                            modelScale.y *= ratio;
-                        }
-
-                        lastScaleX = modelScale.x;
-                        lastScaleY = modelScale.y;
-                        lastScaleZ = modelScale.z;
-                    }
-
-                    if (ImGui::Button("Reset Scale", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
-                        modelScale = glm::vec3(1.0f, 1.0f, 1.0f);
-                    }
-                }
             }
         }
 
@@ -1037,11 +1238,10 @@ int main() {
                 ImGui::BulletText("Change render mode: select from the dropdown menu");
 
                 ImGui::Separator();
-                ImGui::Text("Instanced rendering:");
-                ImGui::BulletText("Enable instancing: check 'Use Instanced Rendering'");
-                ImGui::BulletText("Add instance: click 'Add Instance'");
-                ImGui::BulletText("Select instance: left click on an instance");
-                ImGui::BulletText("Remove instance: select and click 'Remove Selected Instance'");
+                ImGui::Text("Scene management:");
+                ImGui::BulletText("Add object: select type and click 'Add Object'");
+                ImGui::BulletText("Select object: click on an object in the scene list");
+                ImGui::BulletText("Delete object: right-click on object in list and select Delete");
 
                 ImGui::Separator();
                 if (ImGui::Button("Close", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {

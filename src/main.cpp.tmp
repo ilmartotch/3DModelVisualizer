@@ -252,12 +252,12 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
     mouseControl.lastY = (float)ypos;
 
     const float sensitivity = 0.3f;
-    auto selectedObj = sceneManager.getSelectedObject();
+	auto selectedObj = sceneManager.getSelectedObject();
 
     if (objectMoving && selectedObj) {
         glm::vec3 currentMousePos = glm::vec3((float)xpos, (float)ypos, 0.0f);
         glm::vec3 mouseDelta = currentMousePos - lastMousePos;
-        glm::vec3 newPosition = selectedObj->getPosition();
+		glm::vec3 newPosition = selectedObj->getPosition();
 
         // Aggiorna la posizione dell'oggetto selezionato
         switch (currentMoveAxis) {
@@ -277,18 +277,18 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
         }
 
         lastMousePos = currentMousePos;
-        sceneManager.updateObjectPosition(selectedObj->getId(), newPosition);
+		sceneManager.updateObjectPosition(selectedObj->getId(), newPosition);
 
     }
     else if (mouseControl.isPressed && selectedObj) {
-        glm::vec3 newRotation = selectedObj->getRotation();
+		glm::vec3 newRotation = selectedObj->getRotation();
         newRotation.x += yoffset * sensitivity;
         newRotation.y += xoffset * sensitivity;
 
-        newRotation.x = fmodf(newRotation.x, 360.0f);
-        newRotation.y = fmodf(newRotation.y, 360.0f);
+		newRotation.x = fmodf(newRotation.x, 360.0f);
+		newRotation.y = fmodf(newRotation.y, 360.0f);
 
-        sceneManager.updateObjectRotation(selectedObj->getId(), newRotation);
+		sceneManager.updateObjectRotation(selectedObj->getId(), newRotation);
     }
     else if (mouseControl.isOrbiting) {
         mouseControl.orbitalAngleX += xoffset * sensitivity;
@@ -310,9 +310,9 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     mouseControl.cameraDistance -= static_cast<float>(yoffset) * zoomSpeed;
 
     if (mouseControl.cameraDistance < 0.5f) mouseControl.cameraDistance = 0.5f; // Limita la distanza minima della camera
-        if (mouseControl.cameraDistance > 12.0f) mouseControl.cameraDistance = 12.0f; // Limita la distanza massima della camera
+    if (mouseControl.cameraDistance > 12.0f) mouseControl.cameraDistance = 12.0f; // Limita la distanza massima della camera
 
-        updateCameraPosition();
+    updateCameraPosition();
 }
 
 // Callback inizializzazione piking system
@@ -349,14 +349,14 @@ void renderSceneControlPanel() {
         static int selectedModelIndex = 0;
         if (!modelNames.empty()) {
             if (ImGui::Combo("Model Type", &selectedModelIndex,
-            [](void* data, int idx, const char** out_text) {
-                auto& names = *static_cast<std::vector<std::string>*>(data);
-                if (idx >= 0 && idx < names.size()) {
-                    *out_text = names[idx].c_str();
-                    return true;
-                }
-                return false;
-            }, & modelNames, modelNames.size())) {
+                [](void* data, int idx, const char** out_text) {
+                    auto& names = *static_cast<std::vector<std::string>*>(data);
+                    if (idx >= 0 && idx < names.size()) {
+                        *out_text = names[idx].c_str();
+                        return true;
+                    }
+                    return false;
+                }, &modelNames, modelNames.size())) {
             }
 
             if (ImGui::Button("Add Object", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30)) &&
@@ -430,7 +430,7 @@ int main() {
     // Inizializza ImGui
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::getIO(); (void)io;
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(win.getGLFWwindow(), true);
     ImGui_ImplOpenGL3_Init("#version 330");
@@ -465,6 +465,8 @@ int main() {
     // Imposta il modello della griglia
     Grid grid(20, 0.5f);
     grid.initialize();
+
+    // La scena inizia vuota
 
     // Loop temporale
     float timeValue = 0.0f;
@@ -522,8 +524,7 @@ int main() {
         SetUniformMat4(gridShader, "view", view);
         SetUniformMat4(gridShader, "projection", projection);
 
-
-        grid.render(gridShader, projection, view, mouseControl.camPos);
+        grid.render(gridShader);
 
         // Renderizza tutti gli oggetti della scena
         renderScene(shader, view, projection);
@@ -555,10 +556,7 @@ int main() {
             static const char* renderModes[] = { "Solid", "Wireframe", "Solid + Wireframe" };
             if (ImGui::Combo("Render Mode", &currentRenderMode, renderModes, IM_ARRAYSIZE(renderModes)))
             {
-                Model::RenderMode mode = static_cast<Model::RenderMode>(currentRenderMode);
-                if (modelManager.hasActiveModel()) {
-                    modelManager.setActiveModelRenderMode(mode);
-                }
+                // La logica di applicazione è già in renderScene
             }
         }
 
@@ -624,21 +622,19 @@ int main() {
                     ImGui::Checkbox("Maintain proportions", &maintainProportions);
 
                     if (scaleChanged) {
-                        if (maintainProportions) {
-                            static glm::vec3 lastScale = selectedObj->getScale();
-                            if (scale.x != lastScale.x) {
-                                float ratio = scale.x / lastScale.x;
-                                scale.y = ratio; scale.z = ratio;
-                            }
-                            else if (scale.y != lastScale.y) {
-                                float ratio = scale.y / lastScale.y;
-                                scale.x = ratio; scale.z = ratio;
-                            }
-                            else if (scale.z != lastScale.z) {
-                                float ratio = scale.z / lastScale.z;
-                                scale.x = ratio; scale.y = ratio;
-                            }
-                        }
+						if (maintainProportions) {
+							static glm::vec3 lastScale = selectedObj->getScale();
+							if (scale.x != lastScale.x) {
+								float ratio = scale.x / lastScale.x;
+								scale.y *= ratio; scale.z *= ratio;
+							} else if (scale.y != lastScale.y) {
+								float ratio = scale.y / lastScale.y;
+								scale.x *= ratio; scale.z *= ratio;
+							} else if (scale.z != lastScale.z) {
+								float ratio = scale.z / lastScale.z;
+								scale.x *= ratio; scale.y *= ratio;
+							}
+						}
                         sceneManager.updateObjectScale(selectedObj->getId(), scale);
                     }
 

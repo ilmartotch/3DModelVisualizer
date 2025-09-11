@@ -1,22 +1,21 @@
 #pragma once
-#include <vector>
+
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
-#include <string.h> // Per memcpy
 
 class Grid {
 public:
-    Grid(int size = 20, float spacing = 0.5f);
+    Grid(int lines, float spacing); // Costruttore con parametri aggiunto
     ~Grid();
 
     void initialize();
-    void render(GLuint shader);
+    void render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPosition);
 
 private:
-    int m_size;
-    float m_spacing;
     GLuint m_vao;
     GLuint m_vbo;
     bool m_initialized;
-    size_t m_vertexCount;
+    int m_lines;
+    float m_spacing;
 };

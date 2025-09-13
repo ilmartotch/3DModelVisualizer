@@ -1,82 +1,75 @@
 #include "../Include/Grid.h"
-#include <glm/gtc/type_ptr.hpp>
+#include <vector>
 
-Grid::Grid(int lines, float spacing) :
-    m_vao(0),
-    m_vbo(0),
-    m_initialized(false),
-    m_lines(lines),
-    m_spacing(spacing)
-{
-}
+Grid::Grid(float size) : m_size(size), m_vao(0), m_vbo(0) {}
 
 Grid::~Grid() {
-    if (m_vao != 0) {
-        glDeleteVertexArrays(1, &m_vao);
-    }
-    if (m_vbo != 0) {
-        glDeleteBuffers(1, &m_vbo);
-    }
+    cleanup();
 }
 
 void Grid::initialize() {
-    if (m_initialized) return;
-
-    // A simple quad that fills the screen in clip space
-    const float quad_vertices[] = {
-        // positions
-        -1.0f,  1.0f,
-        -1.0f, -1.0f,
-         1.0f,  1.0f,
-         1.0f, -1.0f,
+    // Vertici di un grande quad sul piano XZ (y=0)
+    std::vector<float> vertices = {
+        // Triangolo 1
+        -m_size, 0.0f, -m_size,
+         m_size, 0.0f, -m_size,
+         m_size, 0.0f,  m_size,
+         // Triangolo 2
+          m_size, 0.0f,  m_size,
+         -m_size, 0.0f,  m_size,
+         -m_size, 0.0f, -m_size
     };
 
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
+
     glBindVertexArray(m_vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), &quad_vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
 
+    // L'attributo della posizione è a location 0
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
-
-    m_initialized = true;
 }
 
-void Grid::render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPosition) {
-    if (!m_initialized) return;
-
+void Grid::render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos) {
     glUseProgram(shader);
 
-    // Calculate inverse matrices
-    glm::mat4 inverse_projection = glm::inverse(projection);
-    glm::mat4 inverse_view = glm::inverse(view);
+    // Imposta le matrici e la posizione della camera
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
+    glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, &cameraPos[0]);
 
-    // Set shader uniforms
-    glUniformMatrix4fv(glGetUniformLocation(shader, "u_inverse_projection_matrix"), 1, GL_FALSE, glm::value_ptr(inverse_projection));
-    glUniformMatrix4fv(glGetUniformLocation(shader, "u_inverse_view_matrix"), 1, GL_FALSE, glm::value_ptr(inverse_view));
-    glUniform3fv(glGetUniformLocation(shader, "u_camera_pos"), 1, glm::value_ptr(cameraPosition));
+    // Imposta il colore della griglia (opzionale, lo shader ha un default)
+    glUniform3f(glGetUniformLocation(shader, "gridColor"), 0.5f, 0.5f, 0.5f);
 
-    // Grid properties
-    glUniform3f(glGetUniformLocation(shader, "u_grid_color"), 0.5f, 0.5f, 0.5f); // Grey color
-    glUniform1f(glGetUniformLocation(shader, "u_grid_scale"), 1.0f);           // Spacing of 1 unit
-    glUniform1f(glGetUniformLocation(shader, "u_grid_line_width"), 0.02f);      // Line width
-
-    // Enable blending for transparency
+    // Abilita il blending per la trasparenza e la dissolvenza
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    // Disable depth writing to ensure it doesn't obscure objects behind it
+
+    // Disabilita la scrittura sul depth buffer per evitare che la griglia "copra" gli oggetti dietro di essa
     glDepthMask(GL_FALSE);
 
     glBindVertexArray(m_vao);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDrawArrays(GL_TRIANGLES, 0, 6); // Disegniamo 6 vertici (due triangoli)
     glBindVertexArray(0);
 
-    // Re-enable depth writing for the rest of the scene
+    // Ripristina gli stati di OpenGL
     glDepthMask(GL_TRUE);
     glDisable(GL_BLEND);
+}
+
+void Grid::cleanup() {
+    if (m_vbo != 0) {
+        glDeleteBuffers(1, &m_vbo);
+        m_vbo = 0;
+    }
+    if (m_vao != 0) {
+        glDeleteVertexArrays(1, &m_vao);
+        m_vao = 0;
+    }
 }

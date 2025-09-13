@@ -2,20 +2,17 @@
 
 #include <glad/glad.h>
 #include <glm/glm.hpp>
-#include <GLFW/glfw3.h>
 
 class Grid {
 public:
-    Grid(int lines, float spacing); // Costruttore con parametri aggiunto
+    Grid(float size);
     ~Grid();
 
     void initialize();
-    void render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPosition);
+    void render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos);
+    void cleanup();
 
 private:
-    GLuint m_vao;
-    GLuint m_vbo;
-    bool m_initialized;
-    int m_lines;
-    float m_spacing;
+    float m_size;
+    GLuint m_vao, m_vbo;
 };

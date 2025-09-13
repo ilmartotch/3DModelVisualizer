@@ -39,6 +39,7 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
 void renderSceneControlPanel();
 void processMousePicking(int x, int y);
 void handlePickingResult(const glm::vec3& idColor);
+void resetCameraView();
 
 
 // Variabili window
@@ -73,13 +74,15 @@ int currentRenderMode = static_cast<int>(Model::RenderMode::SOLID);
 struct MouseControl {
     bool isPressed = false;
     bool isOrbiting = false;
+    bool isPanning = false;
     float lastX = 0.0f;
     float lastY = 0.0f;
     float cameraDistance = 3.0f;
     float cameraHeight = 1.5f;
     glm::vec3 camPos = glm::vec3(0.0f, 1.5f, 3.0f);
+	glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     float orbitalAngleX = 0.0f;
-    float orbitalAngleY = 0.0f;
+    float orbitalAngleY = 20.0f;
 };
 
 enum class MoveAxis {
@@ -122,7 +125,16 @@ void updateCameraPosition() {
     float camY = mouseControl.cameraDistance * sinf(glm::radians(mouseControl.orbitalAngleY));
     float camZ = radXZ * cosf(glm::radians(mouseControl.orbitalAngleX));
 
-    mouseControl.camPos = glm::vec3(camX, camY + mouseControl.cameraHeight / 2, camZ);
+    mouseControl.camPos = mouseControl.cameraTarget + glm::vec3(camX, camY + mouseControl.cameraHeight / 2, camZ);
+}
+
+// Riposizionamento telecamera all'origine
+void resetCameraView() {
+	mouseControl.cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+	mouseControl.cameraDistance = 3.0f;
+	mouseControl.orbitalAngleX = 0.0f;
+	mouseControl.orbitalAngleY = 20.0f;
+	updateCameraPosition();
 }
 
 // Funzioni helper per il rendering
@@ -151,7 +163,7 @@ void processMousePicking(int x, int y) {
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glm::mat4 view = glm::lookAt(
         mouseControl.camPos,
-        glm::vec3(0.0f, 0.0f, 0.0f),
+        mouseControl.cameraTarget,
         glm::vec3(0.0f, 1.0f, 0.0f)
     );
 
@@ -187,27 +199,30 @@ void handlePickingResult(const glm::vec3& idColor) {
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+    // Prima verifichiamo se il mouse è sopra ImGui
+    if (ImGui::GetIO().WantCaptureMouse) {
+        return; // Non gestire il click se ImGui lo vuole catturare
+    }
+
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
-            // Prima verifichiamo se il mouse è sopra ImGui
-            if (ImGui::GetIO().WantCaptureMouse) {
-                return; // Non gestire il click se ImGui lo vuole catturare
-            }
-
             double xpos, ypos;
             glfwGetCursorPos(window, &xpos, &ypos);
-
-            // Se il picking è abilitato, gestiamo la selezione tramite il buffer di ID
-            if (pickingEnabled) {
-                processMousePicking(static_cast<int>(xpos), static_cast<int>(ypos));
-            }
 
             // Controlla se ALT è premuto per modalità orbita
             if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
                 glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
                 mouseControl.isOrbiting = true;
-                mouseControl.isPressed = false; // Disabilita la rotazione normale
+                mouseControl.isPressed = false;
+                mouseControl.isPanning = false;
             }
+            // Controlla se CTRL è premuto per il panning
+            else if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
+                mouseControl.isPanning = true;
+                mouseControl.isOrbiting = false;
+                mouseControl.isPressed = false;
+            }
+            // Logica per la manipolazione degli oggetti
             else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && objectSelected) {
                 objectMoving = true;
 
@@ -227,7 +242,10 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
                 lastMousePos = glm::vec3((float)xpos, (float)ypos, 0.0f);
             }
             else {
+                if (pickingEnabled)
+                {processMousePicking(static_cast<int>(xpos), static_cast<int>(ypos));}
                 mouseControl.isOrbiting = false;
+				mouseControl.isPanning = false;
                 mouseControl.isPressed = true;
             }
 
@@ -237,6 +255,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
         else if (action == GLFW_RELEASE) {
             mouseControl.isPressed = false;
             mouseControl.isOrbiting = false;
+			mouseControl.isPanning = false;
             objectMoving = false;
             currentMoveAxis = MoveAxis::NONE;
         }
@@ -298,6 +317,23 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
 
         updateCameraPosition();
     }
+    else if (mouseControl.isPanning) {
+        const float panSpeed = 0.003f * mouseControl.cameraDistance;
+
+        // Calcola la direzione di vista della camera e proiettala sul piano XZ
+        glm::vec3 viewDir = mouseControl.cameraTarget - mouseControl.camPos;
+        glm::vec3 forwardOnPlane = glm::normalize(glm::vec3(viewDir.x, 0.0f, viewDir.z));
+
+        // Il vettore "destra" è perpendicolare alla direzione di vista sul piano
+        glm::vec3 rightOnPlane = glm::normalize(glm::cross(forwardOnPlane, glm::vec3(0.0f, 1.0f, 0.0f)));
+
+        // Muovi il target della camera solo sul piano XZ
+        mouseControl.cameraTarget -= rightOnPlane * xoffset * panSpeed;
+        mouseControl.cameraTarget -= forwardOnPlane * yoffset * panSpeed; // Usa la direzione "avanti" sul piano
+
+        // Aggiorna la posizione della camera in base al nuovo target
+        updateCameraPosition();
+    }
 }
 
 // Callback per lo zoom con la rotellina del mouse
@@ -310,7 +346,7 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     mouseControl.cameraDistance -= static_cast<float>(yoffset) * zoomSpeed;
 
     if (mouseControl.cameraDistance < 0.5f) mouseControl.cameraDistance = 0.5f; // Limita la distanza minima della camera
-        if (mouseControl.cameraDistance > 12.0f) mouseControl.cameraDistance = 12.0f; // Limita la distanza massima della camera
+        if (mouseControl.cameraDistance > 15.0f) mouseControl.cameraDistance = 15.0f; // Limita la distanza massima della camera
 
         updateCameraPosition();
 }
@@ -463,7 +499,7 @@ int main() {
     initializePickingSystem();
 
     // Imposta il modello della griglia
-    Grid grid(20, 0.5f);
+    Grid grid(100.0f);
     grid.initialize();
 
     // Loop temporale
@@ -510,19 +546,11 @@ int main() {
         // Usa la posizione della telecamera calcolata
         view = glm::lookAt(
             mouseControl.camPos,
-            glm::vec3(0.0f, 0.0f, 0.0f),
+            mouseControl.cameraTarget,
             glm::vec3(0.0f, 1.0f, 0.0f)
         );
 
         // Creazione griglia
-        glUseProgram(gridShader);
-        glm::mat4 gridModel = glm::mat4(1.0f);
-        gridModel = glm::translate(gridModel, glm::vec3(0.0f, -0.01f, 0.0f));
-        SetUniformMat4(gridShader, "model", gridModel);
-        SetUniformMat4(gridShader, "view", view);
-        SetUniformMat4(gridShader, "projection", projection);
-
-
         grid.render(gridShader, projection, view, mouseControl.camPos);
 
         // Renderizza tutti gli oggetti della scena
@@ -564,9 +592,13 @@ int main() {
 
         // Regolazione distanza telecamera
         if (ImGui::CollapsingHeader("Camera Control", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (ImGui::SliderFloat("Camera Distance", &mouseControl.cameraDistance, 0.5f, 12.0f))
+            if (ImGui::SliderFloat("Camera Distance", &mouseControl.cameraDistance, 0.5f, 15.0f))
             {
                 updateCameraPosition();
+            }
+            
+            if (ImGui::Button("Reset View", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
+                resetCameraView();
             }
         }
 
@@ -713,8 +745,10 @@ int main() {
                 ImGui::Text("Main commands for 3D modeler");
                 ImGui::Separator();
                 ImGui::Text("Cam navigation:");
-                ImGui::BulletText("Orbital motion: left ALT + left click");
+                ImGui::BulletText("Orbital motion: left ALT + left click and drag");
+                ImGui::BulletText("Pan view: left CTRL + left click and drag");
                 ImGui::BulletText("Zoom in and out: scroll wheel");
+                ImGui::BulletText("Reset view: 'Reset View' button");
                 ImGui::Separator();
                 ImGui::Text("Model manipulation:");
                 ImGui::BulletText("Select model: left click on the model");
@@ -757,6 +791,7 @@ int main() {
     // Pulisci le risorse
     modelManager.cleanup();
     pickingBuffer.cleanup();
+    grid.cleanup();
 
     // Chiudi ImGui
     ImGui_ImplOpenGL3_Shutdown();

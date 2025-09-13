@@ -1,67 +1,53 @@
 #version 330 core
-
 out vec4 FragColor;
 
-in vec3 vs_world_ray_origin;
-in vec3 vs_world_ray_end;
+// Posizione del frammento nel mondo (ricevuta dal vertex shader)
+in vec3 worldPos;
 
-uniform vec3 u_grid_color;
-uniform float u_grid_scale;
-uniform float u_grid_line_width;
+// Posizione della camera per calcolare la dissolvenza
+uniform vec3 cameraPos;
 
-// Computes the intersection of a ray with a plane
-// Returns the distance from the ray origin to the intersection point
-float intersect_plane(vec3 origin, vec3 direction, vec3 normal, float d) {
-    return -(dot(origin, normal) + d) / dot(direction, normal);
-}
+// Colore della griglia, dell'asse X e dell'asse Z
+uniform vec3 gridColor = vec3(0.5, 0.5, 0.5);
+const vec3 xAxisColor = vec3(1.0, 0.2, 0.2); // Rosso
+const vec3 zAxisColor = vec3(0.2, 0.2, 1.0); // Blu
 
-// Computes the opacity of the grid lines based on the distance from the camera
-float compute_grid_opacity(float dist, float max_dist) {
-    return 1.0 - min(dist / max_dist, 1.0);
-}
+// Parametri per la griglia
+const float gridSize = 1.0;      // Spaziatura delle linee principali
+const float fadeDistance = 50.0; // Distanza a cui la griglia inizia a svanire
 
 void main() {
-    vec3 ray_origin = vs_world_ray_origin;
-    vec3 ray_direction = normalize(vs_world_ray_end - vs_world_ray_origin);
+    // Calcola la distanza del frammento dalla camera sul piano XZ
+    float distance = length(worldPos.xz - cameraPos.xz);
 
-    // Define the ground plane (y=0)
-    vec3 plane_normal = vec3(0.0, 1.0, 0.0);
-    float plane_d = 0.0;
+    // Calcola l'opacità (alpha) basandoti sulla distanza per creare un effetto di dissolvenza
+    float alpha = 1.0 - smoothstep(fadeDistance - 10.0, fadeDistance, distance);
+    if (alpha < 0.0) discard; // Non disegnare frammenti completamente trasparenti
 
-    // Find the distance to the intersection point
-    float t = intersect_plane(ray_origin, ray_direction, plane_normal, plane_d);
+    // Algoritmo per disegnare le linee della griglia
+    // fwidth calcola la differenza tra i valori adiacenti, aiutando a mantenere le linee sottili e definite
+    vec2 grid = abs(fract(worldPos.xz / gridSize - 0.5) - 0.5) / fwidth(worldPos.xz / gridSize);
+    float line = min(grid.x, grid.y);
 
-    // If the intersection is behind the camera, discard the fragment
-    if (t < 0.0) {
+    // Se il frammento è molto vicino a una linea (valore basso), lo coloriamo
+    if (line < 1.0) {
+        // Inizia con il colore di base della griglia
+        vec3 finalColor = gridColor;
+
+        // Controlla se siamo vicini all'asse Z (x=0) e coloralo di blu
+        // Usiamo fwidth per mantenere la linea dell'asse spessa quanto le altre linee della griglia
+        if (abs(worldPos.x) < fwidth(worldPos.x) * 1.5) {
+            finalColor = zAxisColor;
+        }
+        // Controlla se siamo vicini all'asse X (z=0) e coloralo di rosso
+        if (abs(worldPos.z) < fwidth(worldPos.z) * 1.5) {
+            finalColor = xAxisColor;
+        }
+
+        float lineIntensity = 1.0 - smoothstep(0.95, 1.0, line);
+        FragColor = vec4(finalColor, lineIntensity * alpha);
+    } else {
+        // Se non siamo su una linea, scartiamo il frammento per rendere la griglia trasparente
         discard;
     }
-
-    // Find the world-space position of the intersection
-    vec3 world_pos = ray_origin + ray_direction * t;
-
-    // Determine which grid lines to draw
-
-    // --- Primary Grid (every 1 unit) ---
-    vec2 grid_pos_primary = world_pos.xz / u_grid_scale;
-    vec2 grid_deriv_primary = dFdx(grid_pos_primary) + dFdy(grid_pos_primary);
-    vec2 grid_line_width_primary = u_grid_line_width / (2.0 * u_grid_scale) * grid_deriv_primary;
-    vec2 grid_line_primary = abs(fract(grid_pos_primary) - 0.5);
-    vec2 grid_line_draw = smoothstep(vec2(0.5) - grid_line_width, vec2(0.5), grid_line);
-    float primary_lines = max(grid_line_draw_primary.x, grid_line_draw_primary.y);
-
-    // --- Secondary Grid (every 10 units, thicker) ---
-    vec2 grid_pos_secondary = world_pos.xz / (u_grid_scale * 10.0);
-    vec2 grid_deriv_secondary = dFdx(grid_pos_secondary) + dFdy(grid_pos_secondary);
-    // Use a larger width for the secondary lines (e.g., 2.5x thicker)
-    vec2 grid_line_width_secondary = (u_grid_line_width * 2.5) / (2.0 * u_grid_scale * 10.0) * grid_deriv_secondary;
-    vec2 grid_line_secondary = abs(fract(grid_pos_secondary) - 0.5);
-    vec2 grid_line_draw_secondary = smoothstep(vec2(0.5) - grid_line_width_secondary, vec2(0.5), grid_line_secondary);
-    float secondary_lines = max(grid_line_draw_secondary.x, grid_line_draw_secondary.y);
-
-    // Combine the lines and compute the final opacity
-    float grid_lines = max(primary_lines, secondary_lines);
-    float opacity = compute_grid_opacity(t, 400.0); // Fade out after 400 units
-
-    // Final color
-    FragColor = vec4(u_grid_color, grid_lines * opacity);
 }

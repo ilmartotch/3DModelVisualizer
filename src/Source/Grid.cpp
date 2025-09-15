@@ -1,23 +1,20 @@
 #include "../Include/Grid.h"
 #include <vector>
+#include <glm/gtc/type_ptr.hpp>
 
-Grid::Grid(float size) : m_size(size), m_vao(0), m_vbo(0) {}
+Grid::Grid() : m_vao(0), m_vbo(0) {}
 
 Grid::~Grid() {
     cleanup();
 }
 
 void Grid::initialize() {
-    // Vertici di un grande quad sul piano XZ (y=0)
+    // Vertici di un semplice quad che copre lo schermo in NDC
     std::vector<float> vertices = {
-        // Triangolo 1
-        -m_size, 0.0f, -m_size,
-         m_size, 0.0f, -m_size,
-         m_size, 0.0f,  m_size,
-         // Triangolo 2
-          m_size, 0.0f,  m_size,
-         -m_size, 0.0f,  m_size,
-         -m_size, 0.0f, -m_size
+        -1.0f, -1.0f, 0.0f,
+         1.0f, -1.0f, 0.0f,
+        -1.0f,  1.0f, 0.0f,
+         1.0f,  1.0f, 0.0f
     };
 
     glGenVertexArrays(1, &m_vao);
@@ -28,7 +25,6 @@ void Grid::initialize() {
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
 
-    // L'attributo della posizione è a location 0
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
@@ -39,27 +35,23 @@ void Grid::initialize() {
 void Grid::render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos) {
     glUseProgram(shader);
 
-    // Imposta le matrici e la posizione della camera
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
+    // Calcola e passa le matrici inverse
+    glm::mat4 invView = glm::inverse(view);
+    glm::mat4 invProjection = glm::inverse(projection);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "invView"), 1, GL_FALSE, glm::value_ptr(invView));
+    glUniformMatrix4fv(glGetUniformLocation(shader, "invProjection"), 1, GL_FALSE, glm::value_ptr(invProjection));
+    
     glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, &cameraPos[0]);
 
-    // Imposta il colore della griglia (opzionale, lo shader ha un default)
-    glUniform3f(glGetUniformLocation(shader, "gridColor"), 0.5f, 0.5f, 0.5f);
-
-    // Abilita il blending per la trasparenza e la dissolvenza
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // Disabilita la scrittura sul depth buffer per evitare che la griglia "copra" gli oggetti dietro di essa
-    glDepthMask(GL_FALSE);
+    glDepthMask(GL_FALSE); // Disabilita scrittura su depth buffer
 
     glBindVertexArray(m_vao);
-    glDrawArrays(GL_TRIANGLES, 0, 6); // Disegniamo 6 vertici (due triangoli)
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
 
-    // Ripristina gli stati di OpenGL
-    glDepthMask(GL_TRUE);
+    glDepthMask(GL_TRUE); // Riabilita scrittura su depth buffer
     glDisable(GL_BLEND);
 }
 

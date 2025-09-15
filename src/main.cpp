@@ -499,7 +499,7 @@ int main() {
     initializePickingSystem();
 
     // Imposta il modello della griglia
-    Grid grid(100.0f);
+    Grid grid;
     grid.initialize();
 
     // Loop temporale

@@ -5,7 +5,7 @@
 
 class Grid {
 public:
-    Grid(float size);
+    Grid();
     ~Grid();
 
     void initialize();
@@ -13,6 +13,5 @@ public:
     void cleanup();
 
 private:
-    float m_size;
     GLuint m_vao, m_vbo;
 };

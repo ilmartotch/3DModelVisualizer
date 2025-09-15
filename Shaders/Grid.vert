@@ -1,18 +1,20 @@
 #version 330 core
 layout (location = 0) in vec3 aPos;
 
-// Matrici per la trasformazione
-uniform mat4 projection;
-uniform mat4 view;
+// Matrici inverse passate come uniform
+uniform mat4 invView;
+uniform mat4 invProjection;
 
-// La posizione del vertice nel mondo la calcoliamo qui
-out vec3 worldPos;
+// Output al fragment shader
+out vec3 worldPos_var;
 
 void main() {
-    // Calcoliamo la posizione del vertice nel mondo.
-    // Ignoriamo la matrice 'model' perché il nostro quad è già in coordinate del mondo.
-    worldPos = aPos;
-    
-    // Trasformiamo la posizione per la visualizzazione
-    gl_Position = projection * view * vec4(aPos, 1.0);
+    // Calcola la posizione del vertice nel mondo usando le matrici inverse
+    // aPos.xy sono le coordinate del quad a schermo intero [-1, 1]
+
+    vec4 world = invView * invProjection * vec4(aPos.xy, 0.999, 1.0);
+    worldPos_var = world.xyz / world.w;
+
+    // Disegna un quad che copre l'intero schermo
+    gl_Position = vec4(aPos.xy, 0.999, 1.0);
 }

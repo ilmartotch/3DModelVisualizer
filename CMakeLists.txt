@@ -50,5 +50,5 @@ target_include_directories(App PRIVATE
 )
 
 target_include_directories(App PRIVATE
-  ${CMAKE_SOURCE_DIR}/shaders
+  ${CMAKE_SOURCE_DIR}/Shaders
 )

@@ -106,11 +106,11 @@ public:
         // Ogni riga della matrice mat4 occupa un attributo separato
         GLsizei vec4Size = sizeof(glm::vec4);
 
-        // Assumiamo che il VBO delle istanze sia già stato bindato dal manager
+        // Assumiamo che il VBO delle istanze sia gi stato bindato dal manager
         for (int i = 0; i < 4; ++i) {
             glEnableVertexAttribArray(3 + i);
             glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
-                (void*)(i * vec4Size));
+                (void*)(static_cast<uintptr_t>(i) * vec4Size));
             glVertexAttribDivisor(3 + i, 1);  // Avanza ogni istanza
         }
 

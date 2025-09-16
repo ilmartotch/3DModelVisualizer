@@ -2,131 +2,175 @@
 #include "../Include/SceneManager.h"
 #include <iostream>
 
-SceneManager::SceneManager(ModelManager& modelManager)
-    : modelManager(modelManager), nextId(1), selectedObjectId(0) {}
-
-std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelName, const glm::vec3& position) {
+std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelName, const glm::vec3& pos) {
     auto model = modelManager.getModel(modelName);
-    if (model) {
-        std::string objectName = modelName + "_" + std::to_string(nextId);
-        auto newObject = std::make_shared<SceneObject>(nextId++, objectName, model, position);
-        objects.push_back(newObject);
-        return newObject;
+    if (!model) {
+        std::cerr << "Modello non trovato: " << modelName << std::endl;
+        return nullptr;
     }
-    return nullptr;
+
+    auto obj = std::make_shared<SceneObject>(nextId++, model, modelName + "_" + std::to_string(nextId - 1));
+    obj->setPosition(pos);
+    objects.push_back(obj);
+    return obj;
 }
 
-void SceneManager::removeObject(unsigned int objectId) {
-    objects.erase(std::remove_if(objects.begin(), objects.end(),
-        [objectId](const std::shared_ptr<SceneObject>& obj) {
-            return obj->getId() == objectId;
-        }), objects.end());
+bool SceneManager::removeObject(unsigned int id) {
+    auto it = std::find_if(objects.begin(), objects.end(),
+        [id](const auto& obj) { return obj->getId() == id; });
 
-    if (selectedObjectId == objectId) {
-        selectedObjectId = 0;
-    }
-}
-
-void SceneManager::selectObject(unsigned int objectId) {
-    deselectAll();
-    for (auto& obj : objects) {
-        if (obj->getId() == objectId) {
-            obj->setSelected(true);
-            selectedObjectId = objectId;
-            break;
+    if (it != objects.end()) {
+        if (selectedObject && selectedObject->getId() == id) {
+            selectedObject = nullptr;
         }
+        objects.erase(it);
+        return true;
+    }
+    return false;
+}
+
+void SceneManager::selectObject(unsigned int id) {
+    deselectAll();
+
+    auto it = std::find_if(objects.begin(), objects.end(),
+        [id](const auto& obj) { return obj->getId() == id; });
+
+    if (it != objects.end()) {
+        selectedObject = *it;
+        selectedObject->setSelected(true);
     }
 }
 
 void SceneManager::deselectAll() {
-    if (selectedObjectId != 0) {
-        for (auto& obj : objects) {
-            if (obj->getSelected()) {
-                obj->setSelected(false);
-            }
-        }
-        selectedObjectId = 0;
+    if (selectedObject) {
+        selectedObject->setSelected(false);
+        selectedObject = nullptr;
     }
 }
 
-std::shared_ptr<SceneObject> SceneManager::getSelectedObject() const {
-    if (selectedObjectId == 0) return nullptr;
-    for (const auto& obj : objects) {
-        if (obj->getId() == selectedObjectId) {
-            return obj;
-        }
-    }
-    return nullptr;
-}
-
-void SceneManager::updateObjectPosition(unsigned int objectId, const glm::vec3& newPosition) {
+void SceneManager::renderAll(GLuint shader, const glm::mat4& view, const glm::mat4& projection,
+    Model::RenderMode renderMode) {
     for (auto& obj : objects) {
-        if (obj->getId() == objectId) {
-            obj->setPosition(newPosition);
-            break;
-        }
-    }
-}
-
-void SceneManager::updateObjectRotation(unsigned int objectId, const glm::vec3& newRotation) {
-    for (auto& obj : objects) {
-        if (obj->getId() == objectId) {
-            obj->setRotation(newRotation);
-            break;
-        }
-    }
-}
-
-void SceneManager::updateObjectScale(unsigned int objectId, const glm::vec3& newScale) {
-    for (auto& obj : objects) {
-        if (obj->getId() == objectId) {
-            obj->setScale(newScale);
-            break;
-        }
-    }
-}
-
-void SceneManager::updateObjectName(unsigned int objectId, const std::string& newName) {
-    for (auto& obj : objects) {
-        if (obj->getId() == objectId) {
-            obj->setName(newName);
-            break;
-        }
-    }
-}
-
-void SceneManager::renderAll(GLuint shader, const glm::mat4& view, const glm::mat4& projection, Model::RenderMode renderMode) {
-    glUseProgram(shader);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(shader, "projection"), 1, GL_FALSE, &projection[0][0]);
-
-    for (const auto& obj : objects) {
-        obj->render(shader, renderMode);
+        renderObject(obj, shader, view, projection, renderMode);
     }
 }
 
 void SceneManager::renderForPicking(GLuint pickingShader, const glm::mat4& view, const glm::mat4& projection) {
-    glUseProgram(pickingShader);
-    glUniformMatrix4fv(glGetUniformLocation(pickingShader, "view"), 1, GL_FALSE, &view[0][0]);
-    glUniformMatrix4fv(glGetUniformLocation(pickingShader, "projection"), 1, GL_FALSE, &projection[0][0]);
-
-    for (const auto& obj : objects) {
-        obj->renderForPicking(pickingShader);
+    for (auto& obj : objects) {
+        renderObjectForPicking(obj, pickingShader, view, projection);
     }
 }
 
-const std::vector<std::shared_ptr<SceneObject>>& SceneManager::getObjects() const {
-    return objects;
+void SceneManager::renderObject(std::shared_ptr<SceneObject> obj, GLuint shader,
+    const glm::mat4& view, const glm::mat4& projection,
+    Model::RenderMode renderMode) {
+    if (!obj->getModel()) return;
+
+    glUseProgram(shader);
+
+    glm::mat4 modelMatrix = obj->getModelMatrix();
+    SetUniformMat4(shader, "model", modelMatrix);
+    SetUniformMat4(shader, "view", view);
+    SetUniformMat4(shader, "projection", projection);
+
+    GLint colorLocation = glGetUniformLocation(shader, "objectColor");
+    if (colorLocation != -1) {
+        if (obj->getSelected()) {
+            glUniform3f(colorLocation, 1.0f, 0.8f, 0.2f); // Arancione per selezione
+        }
+        else {
+            glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f); // Bianco normale
+        }
+    }
+
+    applyRenderMode(renderMode);
+    obj->getModel()->render();
+
+    if (obj->getSelected()) {
+        renderOutline(obj, shader, modelMatrix);
+    }
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-size_t SceneManager::getObjectCount() const {
-    return objects.size();
+void SceneManager::renderObjectForPicking(std::shared_ptr<SceneObject> obj, GLuint pickingShader,
+    const glm::mat4& view, const glm::mat4& projection) {
+    if (!obj->getModel()) return;
+
+    glUseProgram(pickingShader);
+
+    glm::mat4 modelMatrix = obj->getModelMatrix();
+    SetUniformMat4(pickingShader, "model", modelMatrix);
+    SetUniformMat4(pickingShader, "view", view);
+    SetUniformMat4(pickingShader, "projection", projection);
+
+    glm::vec3 idColor = idToColor(obj->getId());
+    GLint idColorLocation = glGetUniformLocation(pickingShader, "idColor");
+    if (idColorLocation != -1) {
+        glUniform3fv(idColorLocation, 1, glm::value_ptr(idColor));
+    }
+
+    obj->getModel()->render();
 }
 
-unsigned int SceneManager::colorToId(const glm::vec3& color) const {
-    if (color.r == 0.0f && color.g == 0.0f && color.b == 0.0f) return 0;
-    unsigned int r = static_cast<unsigned int>(color.r * 255.0f);
-    unsigned int g = static_cast<unsigned int>(color.g * 255.0f);
-    unsigned int b = static_cast<unsigned int>(color.b * 255.0f);
+void SceneManager::renderOutline(std::shared_ptr<SceneObject> obj, GLuint shader, const glm::mat4& modelMatrix) {
+    GLint colorLocation = glGetUniformLocation(shader, "objectColor");
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glm::mat4 outlineMatrix = glm::scale(modelMatrix, glm::vec3(1.05f));
+
+    SetUniformMat4(shader, "model", outlineMatrix);
+    if (colorLocation != -1)
+        glUniform3f(colorLocation, 1.0f, 1.0f, 0.0f); // Giallo
+
+    obj->getModel()->render();
+}
+
+void SceneManager::applyRenderMode(Model::RenderMode mode) {
+    switch (mode) {
+    case Model::RenderMode::WIREFRAME:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        break;
+    case Model::RenderMode::SOLID_WITH_WIREFRAME:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        break;
+    default:
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        break;
+    }
+}
+
+glm::vec3 SceneManager::idToColor(unsigned int id) {
+    float r = ((id >> 16) & 0xFF) / 255.0f;
+    float g = ((id >> 8) & 0xFF) / 255.0f;
+    float b = (id & 0xFF) / 255.0f;
+    return glm::vec3(r, g, b);
+}
+
+unsigned int SceneManager::colorToId(const glm::vec3& color) {
+    unsigned int r = static_cast<unsigned int>(color.r * 255.0f + 0.5f);
+    unsigned int g = static_cast<unsigned int>(color.g * 255.0f + 0.5f);
+    unsigned int b = static_cast<unsigned int>(color.b * 255.0f + 0.5f);
     return (r << 16) | (g << 8) | b;
+}
+
+std::shared_ptr<SceneObject> SceneManager::getObjectById(unsigned int id) {
+    auto it = std::find_if(objects.begin(), objects.end(),
+        [id](const auto& obj) { return obj->getId() == id; });
+    return (it != objects.end()) ? *it : nullptr;
+}
+
+void SceneManager::updateObjectPosition(unsigned int id, const glm::vec3& position) {
+    auto obj = getObjectById(id);
+    if (obj) obj->setPosition(position);
+}
+
+void SceneManager::updateObjectRotation(unsigned int id, const glm::vec3& rotation) {
+    auto obj = getObjectById(id);
+    if (obj) obj->setRotation(rotation);
+}
+
+void SceneManager::updateObjectScale(unsigned int id, const glm::vec3& scale) {
+    auto obj = getObjectById(id);
+    if (obj) obj->setScale(scale);
 }

@@ -40,8 +40,6 @@ void renderSceneControlPanel();
 void processMousePicking(int x, int y);
 void handlePickingResult(const glm::vec3& idColor);
 void resetCameraView();
-void renderObjectPropertiesWindow();
-void RenderEditableObjectName(const std::shared_ptr<SceneObject>& obj);
 
 
 // Variabili window
@@ -51,6 +49,7 @@ bool windowResized = false;
 static bool shoeHelpWindow = false;
 const int SIDEBAR_WIDTH = 300;
 bool showModelInfo = true;
+bool showSelectedModelPanel = false;
 
 // FPS
 float fps = 0.0f;
@@ -61,6 +60,7 @@ int frameCount = 0;
 bool objectMoving = false;
 glm::vec3 lastMousePos;
 float moveSpeed = 0.1f;
+bool objectSelected = false;
 
 // Manager per picking
 PickingBuffer pickingBuffer;
@@ -69,10 +69,6 @@ bool pickingEnabled = true;
 
 // Tracciamento RenderMode
 int currentRenderMode = static_cast<int>(Model::RenderMode::SOLID);
-
-// Stato per la modifica del nome dell'oggetto
-static unsigned int editingNameId = 0; // ID dell'oggetto in modifica, 0 se nessuno
-static char nameBuffer[128] = "";
 
 // Input comandi
 struct MouseControl {
@@ -100,26 +96,12 @@ MoveAxis currentMoveAxis = MoveAxis::NONE;
 
 MouseControl mouseControl;
 
-// Ultima posizione di spawn e offset per evitare sovrapposizioni
-glm::vec3 lastSpawnPosition = glm::vec3(0.0f, 0.5f, 0.0f);
-const float PLACEMENT_OFFSET = 1.5f; // Distanza per il posizionamento a lato
-
 // ModelManager per la gestione dei modelli
 ModelManager modelManager;
 
 // SceneManager per la gestione della scena
 SceneManager sceneManager(modelManager);
 
-// Funzione per verificare se una posizione è già occupata
-bool isPositionOccupied(const glm::vec3& position, float tolerance = 1.0f) {
-    for (const auto& obj : sceneManager.getObjects()) {
-        if (glm::distance(glm::vec2(obj->getPosition().x, obj->getPosition().z), glm::vec2(position.x, position.z)) < tolerance) {
-                return true;
-            }
-        }
-        return false;
-    }
-    
 // Ridimensionamento della finestra
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     if (width > 0 && height > 0) {
@@ -205,37 +187,14 @@ void handlePickingResult(const glm::vec3& idColor) {
 
     if (objectId > 0) {
         sceneManager.selectObject(objectId);
+        objectSelected = true;
+        showSelectedModelPanel = true;
     }
     else {
         // Nessun oggetto selezionato
         sceneManager.deselectAll();
-    }
-}
-
-void RenderEditableObjectName(const std::shared_ptr<SceneObject>& obj) {
-    if (obj->getId() == editingNameId) {
-        // Modalità modifica: mostra un campo di input
-        ImGui::PushItemWidth(150); // Imposta una larghezza per il campo di testo
-        if (ImGui::InputText("##NameEdit", nameBuffer, sizeof(nameBuffer), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll)) {
-            sceneManager.updateObjectName(obj->getId(), std::string(nameBuffer));
-            editingNameId = 0; // Termina la modifica
-        }
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            // L'utente ha cliccato fuori, termina la modifica
-            sceneManager.updateObjectName(obj->getId(), std::string(nameBuffer));
-            editingNameId = 0;
-        }
-        ImGui::PopItemWidth();
-    } else {
-        // Modalità visualizzazione: mostra il testo
-        ImGui::TextUnformatted(obj->getName().c_str());
-        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-            // Avvia la modifica al doppio clic
-            editingNameId = obj->getId();
-            strncpy_s(nameBuffer, obj->getName().c_str(), sizeof(nameBuffer) - 1);
-            nameBuffer[sizeof(nameBuffer) - 1] = '\0'; // Assicura la terminazione
-            ImGui::SetKeyboardFocusHere(-1); // Imposta il focus sul prossimo campo di input
-        }
+        objectSelected = false;
+        showSelectedModelPanel = false;
     }
 }
 
@@ -264,7 +223,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
                 mouseControl.isPressed = false;
             }
             // Logica per la manipolazione degli oggetti
-            else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && sceneManager.getSelectedObject()) {
+            else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && objectSelected) {
                 objectMoving = true;
 
                 if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
@@ -438,28 +397,16 @@ void renderSceneControlPanel() {
 
             if (ImGui::Button("Add Object", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30)) &&
                 selectedModelIndex < modelNames.size()) {
-                // Posizione iniziale basata sul target della camera
-                glm::vec3 targetPosition = mouseControl.cameraTarget;
-                targetPosition.y = 0.5f; // Assicura che sia sul piano della griglia
+                // Genera posizione casuale
+                float randX = (float)rand() / RAND_MAX * 4.0f - 2.0f;
+                float randZ = (float)rand() / RAND_MAX * 4.0f - 2.0f;
 
-                glm::vec3 finalPosition = targetPosition;
-
-                // Se la posizione target è occupata, calcola una nuova posizione
-                // a lato dell'ultimo oggetto spawnato.
-                if (isPositionOccupied(targetPosition)) {
-                    finalPosition = lastSpawnPosition + glm::vec3(PLACEMENT_OFFSET, 0.0f, 0.0f);
-                }
-
-                // Continua a cercare una posizione libera se anche quella calcolata è occupata
-                while (isPositionOccupied(finalPosition)) {
-                    finalPosition += glm::vec3(PLACEMENT_OFFSET, 0.0f, 0.0f);
-                }
-
-                // Aggiungi l'oggetto e aggiorna l'ultima posizione di spawn
-                auto newObj = sceneManager.addObject(modelNames[selectedModelIndex], finalPosition);
+                auto newObj = sceneManager.addObject(modelNames[selectedModelIndex],
+                    glm::vec3(randX, 0.5f, randZ));
                 if (newObj) {
-                    lastSpawnPosition = finalPosition; // Aggiorna l'ultima posizione usata
                     sceneManager.selectObject(newObj->getId());
+                    objectSelected = true;
+                    showSelectedModelPanel = true;
                 }
             }
         }
@@ -469,78 +416,38 @@ void renderSceneControlPanel() {
         // Lista oggetti nella scena
         ImGui::Text("Objects in Scene (%zu):", sceneManager.getObjectCount());
 
-    for (const auto& obj : sceneManager.getObjects()) {
-
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-        if (obj->getSelected()) {
-            flags |= ImGuiTreeNodeFlags_Selected;
-        }
-
-        // Usa un ID univoco per il nodo per evitare conflitti
-        ImGui::PushID(obj->getId());
-        ImGui::TreeNodeEx("##tree_node", flags); // Nodo senza etichetta visibile
-        ImGui::SameLine();
-        
-        // Renderizza il nome modificabile
-        RenderEditableObjectName(obj);
-
-        ImGui::PopID();
-
-        if (ImGui::IsItemClicked() && editingNameId != obj->getId()) {
-            sceneManager.selectObject(obj->getId());
-        }
-
-        // Menu contestuale
-        if (ImGui::BeginPopupContextItem()) {
-            if (ImGui::MenuItem("Delete")) {
-                unsigned int idToRemove = obj->getId();
-                if (obj->getSelected()) {
-                    sceneManager.deselectAll();
-                }
-                sceneManager.removeObject(idToRemove);
-                break; // Esce dal loop per evitare iterazione su container modificato
+        for (const auto& obj : sceneManager.getObjects()) {
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+            if (obj->getSelected()) {
+                flags |= ImGuiTreeNodeFlags_Selected;
             }
-            ImGui::EndPopup();
+
+            ImGui::TreeNodeEx(obj->getName().c_str(), flags);
+
+            if (ImGui::IsItemClicked()) {
+                sceneManager.selectObject(obj->getId());
+                objectSelected = true;
+                showSelectedModelPanel = true;
+            }
+
+            // Menu contestuale
+            if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("Delete")) {
+                    unsigned int idToRemove = obj->getId();
+                    if (obj->getSelected()) {
+                        objectSelected = false;
+                        showSelectedModelPanel = false;
+                    }
+                    sceneManager.removeObject(idToRemove);
+                    break; // Esce dal loop per evitare iterazione su container modificato
+                }
+                ImGui::EndPopup();
+            }
         }
-    }
-
-    ImGui::Separator();
-    ImGui::Checkbox("Enable Picking", &pickingEnabled);
-    }
-}
-
-void renderObjectPropertiesWindow() {
-    auto selectedObj = sceneManager.getSelectedObject();
-    if (!selectedObj) {
-        return;
-    }
-
-    // Flag per controllare la visibilità della finestra
-    static bool showProperties = true;
-    if (!selectedObj) {
-        showProperties = false;
-    } else {
-        showProperties = true;
-    }
-
-    if (!showProperties) return;
-
-    // Posiziona la finestra sotto il contatore FPS
-    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 260, 50), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(250, 0), ImGuiCond_Always);
-
-    if (ImGui::Begin("Object Properties", &showProperties, 0 | ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Name: ");
-        ImGui::SameLine();
-        RenderEditableObjectName(selectedObj);
 
         ImGui::Separator();
-
-        glm::vec3 position = selectedObj->getPosition();
-        ImGui::Text("Position:");
-        ImGui::Text("X: %.2f, Y: %.2f, Z: %.2f", position.x, position.y, position.z);
+        ImGui::Checkbox("Enable Picking", &pickingEnabled);
     }
-    ImGui::End();
 }
 
 int main() {
@@ -696,7 +603,7 @@ int main() {
         }
 
         // Dati modello selezionato
-        if (sceneManager.getSelectedObject()) {
+        if (objectSelected && showSelectedModelPanel) {
             ImGui::Separator();
             if (ImGui::CollapsingHeader("Selected Object", ImGuiTreeNodeFlags_DefaultOpen)) {
                 auto selectedObj = sceneManager.getSelectedObject();
@@ -828,9 +735,6 @@ int main() {
         }
 
         ImGui::End(); // Fine sidebar
-
-        // Finestra delle proprietà dell'oggetto
-        renderObjectPropertiesWindow();
 
         // Finestra help
         if (shoeHelpWindow) {

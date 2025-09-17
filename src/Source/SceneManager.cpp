@@ -11,22 +11,38 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
 
     auto obj = std::make_shared<SceneObject>(nextId++, model, modelName + "_" + std::to_string(nextId - 1));
     obj->setPosition(pos);
+    obj->setInitialPosition(pos); // Salva la posizione iniziale
     objects.push_back(obj);
     return obj;
 }
 
+// Implementazione del metodo removeObject
 bool SceneManager::removeObject(unsigned int id) {
-    auto it = std::find_if(objects.begin(), objects.end(),
-        [id](const auto& obj) { return obj->getId() == id; });
-
-    if (it != objects.end()) {
-        if (selectedObject && selectedObject->getId() == id) {
-            selectedObject = nullptr;
+    // Trova l'indice dell'oggetto da rimuovere
+    size_t index = 0;
+    bool found = false;
+    
+    for (size_t i = 0; i < objects.size(); ++i) {
+        if (objects[i]->getId() == id) {
+            index = i;
+            found = true;
+            break;
         }
-        objects.erase(it);
-        return true;
     }
-    return false;
+    
+    if (!found) {
+        return false;  // Oggetto non trovato
+    }
+    
+    // Se stiamo rimuovendo l'oggetto selezionato, deseleziona tutto
+    if (objects[index]->getSelected()) {
+        selectedObjectId = 0;
+    }
+    
+    // Rimuovi l'oggetto dalla lista
+    objects.erase(objects.begin() + index);
+    
+    return true;
 }
 
 void SceneManager::selectObject(unsigned int id) {
@@ -238,4 +254,55 @@ glm::vec3 SceneManager::findValidSpawnPosition(const glm::vec3& cameraPos, const
     
     // Se non troviamo uno spazio libero dopo tutti i tentativi, ritorna una posizione distante
     return glm::vec3(desiredPos.x + radius * 2.0f, yOffset, desiredPos.z);
+}
+
+// Riposiziona alla posizione iniziale
+void SceneManager::resetObjectToInitialPosition(unsigned int id) {
+    auto obj = getObjectById(id);
+    if (obj) {
+        obj->resetToInitialPosition();
+    }
+}
+
+// Rinomina l'oggetto
+void SceneManager::renameObject(unsigned int id, const std::string& newName) {
+    auto obj = getObjectById(id);
+    if (obj) {
+        obj->setName(newName);
+	}
+}
+
+// Implementazione del metodo di duplicazione
+std::shared_ptr<SceneObject> SceneManager::duplicateObject(unsigned int sourceId, const glm::vec3& newPosition) {
+    // Trova l'oggetto da duplicare
+    std::shared_ptr<SceneObject> sourceObj = nullptr;
+    for (const auto& obj : objects) {
+        if (obj->getId() == sourceId) {
+            sourceObj = obj;
+            break;
+        }
+    }
+    
+    if (!sourceObj) {
+        return nullptr;
+    }
+    
+    // Ottieni il modello originale
+    std::string modelType = sourceObj->getModelType();
+    
+    // Crea un nuovo oggetto dello stesso tipo
+    auto newObj = addObject(modelType, newPosition);
+    if (!newObj) {
+        return nullptr;
+    }
+    
+    // Copia le proprietà (eccetto posizione che è già impostata)
+    newObj->setScale(sourceObj->getScale());
+    newObj->setRotation(sourceObj->getRotation());
+    
+    // Genera un nome per la copia
+    std::string newName = sourceObj->getName() + " (Copy)";
+    newObj->setName(newName);
+    
+    return newObj;
 }

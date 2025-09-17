@@ -19,6 +19,9 @@ private:
 
     bool m_selected = false;  // Flag di selezione
 
+    // Memorizzare la posizione iniziale
+    glm::vec3 m_initialPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+
 public:
     SceneObject(unsigned int id, std::shared_ptr<Model> model, const std::string& name)
         : m_id(id), m_model(model), m_name(name) {
@@ -40,6 +43,15 @@ public:
     void setScale(const glm::vec3& scale) { m_scale = scale; }
     void setSelected(bool selected) { m_selected = selected; }
 
+    // Salva la posizione di spawn come posizione iniziale
+    void setInitialPosition(const glm::vec3& pos) { m_initialPosition = pos; }
+    
+    // Ottieni la posizione iniziale salvata
+    const glm::vec3& getInitialPosition() const { return m_initialPosition; }
+    
+	// Ripristina la posizione iniziale
+    void resetToInitialPosition() { m_position = m_initialPosition; }
+
     // Calcola la matrice modello combinata per il rendering
     glm::mat4 getModelMatrix() const {
         glm::mat4 model = glm::mat4(1.0f);
@@ -50,10 +62,10 @@ public:
         model = glm::scale(model, m_scale);
         return model;
     }
-};
 
-//rappresentazione di un singolo oggetto nella scena, mantenendo i riferimenti del modello e le trasformazioni
-// Include per la gestione di un oggetto nella scena, con ID, modello, nome e trasformazioni
-// 
-// La funzione getModelMatrix() è particolarmente importante perché calcola la matrice di trasformazione 
-// finale utilizzata durante il rendering.
+    // Modifica nome dei modelli
+	void setName(const std::string& newName) { m_name = newName; }
+
+    const std::string& getModelType() const { return m_name; }
+
+};

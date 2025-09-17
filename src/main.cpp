@@ -42,7 +42,7 @@ void handlePickingResult(const glm::vec3& idColor);
 void resetCameraView();
 bool isPositionOccupied(const glm::vec3& position, float radius, const SceneManager& sceneManager);
 glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& sceneManager);
-
+void processKeyboardShortcuts(GLFWwindow* window);
 
 // Variabili window
 int windoWidth = 800;
@@ -63,6 +63,11 @@ bool objectMoving = false;
 glm::vec3 lastMousePos;
 float moveSpeed = 0.1f;
 bool objectSelected = false;
+unsigned int objectToDeleteId = 0;
+bool showDeleteConfirmation = false;
+
+std::vector<unsigned int> multiSelectedObjectIds;
+bool multiSelectionMode = false;
 
 // Manager per picking
 PickingBuffer pickingBuffer;
@@ -82,7 +87,7 @@ struct MouseControl {
     float cameraDistance = 3.0f;
     float cameraHeight = 1.5f;
     glm::vec3 camPos = glm::vec3(0.0f, 1.5f, 3.0f);
-	glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
     float orbitalAngleX = 0.0f;
     float orbitalAngleY = 20.0f;
 };
@@ -129,7 +134,6 @@ glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& 
 }
 
 
-// Ridimensionamento della finestra
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     if (width > 0 && height > 0) {
         windoWidth = width;
@@ -155,13 +159,13 @@ void updateCameraPosition() {
     mouseControl.camPos = mouseControl.cameraTarget + glm::vec3(camX, camY + mouseControl.cameraHeight / 2, camZ);
 }
 
-// Riposizionamento telecamera all'origine
+// Ripristina la vista della telecamera all'origine
 void resetCameraView() {
-	mouseControl.cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
-	mouseControl.cameraDistance = 3.0f;
-	mouseControl.orbitalAngleX = 0.0f;
-	mouseControl.orbitalAngleY = 20.0f;
-	updateCameraPosition();
+    mouseControl.cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+    mouseControl.cameraDistance = 3.0f;
+    mouseControl.orbitalAngleX = 0.0f;
+    mouseControl.orbitalAngleY = 20.0f;
+    updateCameraPosition();
 }
 
 // Funzioni helper per il rendering
@@ -208,20 +212,57 @@ void processMousePicking(int x, int y) {
     handlePickingResult(idColor);
 }
 
+float lastClickTime = 0.0f;
+const float doubleClickTimeThreshold = 0.3f; // 300 ms per riconoscere un doppio click
+unsigned int lastClickedObjectId = 0;
+
+// Aggiungi queste variabili globali
+bool pinSelectedModelPanel = false;  // Per "fissare" il pannello
+ImVec2 selectedPanelSize = ImVec2(300, 0);  // Dimensione del pannello
+
+// Modifica la funzione handlePickingResult per gestire la visualizzazione del pannello
 void handlePickingResult(const glm::vec3& idColor) {
     // Controlla se è un oggetto del SceneManager
     unsigned int objectId = sceneManager.colorToId(idColor);
-
+    
     if (objectId > 0) {
-        sceneManager.selectObject(objectId);
-        objectSelected = true;
-        showSelectedModelPanel = true;
-    }
-    else {
+        // Ottieni il tempo corrente per il controllo del doppio click
+        float currentTime = static_cast<float>(glfwGetTime());
+        
+        // Controlla se questo è un doppio click sullo stesso oggetto
+        if (objectId == lastClickedObjectId && 
+            (currentTime - lastClickTime) < doubleClickTimeThreshold) {
+            // Doppio click rilevato - seleziona l'oggetto e mostra il pannello
+            sceneManager.selectObject(objectId);
+            objectSelected = true;
+            showSelectedModelPanel = true;
+            
+            // Reset per evitare di rilevare un triplo click come doppio
+            lastClickTime = 0.0f;
+            lastClickedObjectId = 0;
+        } else {
+            // Primo click - seleziona l'oggetto e mostra comunque il pannello
+            sceneManager.selectObject(objectId);
+            objectSelected = true;
+            showSelectedModelPanel = true;
+            
+            // Aggiorna i dati per il potenziale doppio click
+            lastClickTime = currentTime;
+            lastClickedObjectId = objectId;
+        }
+    } else {
         // Nessun oggetto selezionato
         sceneManager.deselectAll();
         objectSelected = false;
-        showSelectedModelPanel = false;
+        
+        // Se il pannello non è fissato, lo nascondiamo
+        if (!pinSelectedModelPanel) {
+            showSelectedModelPanel = false;
+        }
+        
+        // Reset delle variabili di doppio click
+        lastClickTime = 0.0f;
+        lastClickedObjectId = 0;
     }
 }
 
@@ -272,7 +313,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
                 if (pickingEnabled)
                 {processMousePicking(static_cast<int>(xpos), static_cast<int>(ypos));}
                 mouseControl.isOrbiting = false;
-				mouseControl.isPanning = false;
+                mouseControl.isPanning = false;
                 mouseControl.isPressed = true;
             }
 
@@ -282,7 +323,7 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
         else if (action == GLFW_RELEASE) {
             mouseControl.isPressed = false;
             mouseControl.isOrbiting = false;
-			mouseControl.isPanning = false;
+            mouseControl.isPanning = false;
             objectMoving = false;
             currentMoveAxis = MoveAxis::NONE;
         }
@@ -439,6 +480,11 @@ void renderSceneControlPanel() {
 
         ImGui::Separator();
 
+        // Variabili per gestire la rinomina
+        static bool isRenaming = false;
+        static unsigned int renamingId = 0;
+        static char renameBuffer[128] = ""; // Buffer per il nuovo nome
+
         // Lista oggetti nella scena
         ImGui::Text("Objects in Scene (%zu):", sceneManager.getObjectCount());
 
@@ -448,9 +494,39 @@ void renderSceneControlPanel() {
                 flags |= ImGuiTreeNodeFlags_Selected;
             }
 
-            ImGui::TreeNodeEx(obj->getName().c_str(), flags);
+            // Mostra il campo di input per la rinomina o il nome normale
+            bool isThisObjectRenaming = isRenaming && renamingId == obj->getId();
+            
+            if (isThisObjectRenaming) {
+                // Mostra il campo di input per rinominare
+                ImGui::PushID(static_cast<int>(obj->getId()));
+                if (ImGui::InputText("##rename", renameBuffer, sizeof(renameBuffer), 
+                                    ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    // Applica il nuovo nome quando l'utente preme Enter
+                    sceneManager.renameObject(obj->getId(), renameBuffer);
+                    isRenaming = false;
+                }
+                
+                // Gestione della perdita di focus
+                if (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0)) {
+                    isRenaming = false;
+                }
+                ImGui::PopID();
+            } else {
+                // Mostra il nome normale
+                ImGui::TreeNodeEx(obj->getName().c_str(), flags);
+                
+                // Controllo per il doppio click
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    isRenaming = true;
+                    renamingId = obj->getId();
+                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
+                    renameBuffer[sizeof(renameBuffer) - 1] = '\0'; // Assicura terminazione
+                }
+            }
 
-            if (ImGui::IsItemClicked()) {
+            // Gestione click singolo (selezione)
+            if (!isThisObjectRenaming && ImGui::IsItemClicked()) {
                 sceneManager.selectObject(obj->getId());
                 objectSelected = true;
                 showSelectedModelPanel = true;
@@ -458,14 +534,27 @@ void renderSceneControlPanel() {
 
             // Menu contestuale
             if (ImGui::BeginPopupContextItem()) {
+                if (ImGui::MenuItem("Rename")) {
+                    isRenaming = true;
+                    renamingId = obj->getId();
+                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
+                }
+                
                 if (ImGui::MenuItem("Delete")) {
                     unsigned int idToRemove = obj->getId();
+                    
+                    // Se l'oggetto da rimuovere è quello attualmente selezionato
                     if (obj->getSelected()) {
                         objectSelected = false;
                         showSelectedModelPanel = false;
                     }
+                    
+                    // Rimuovi l'oggetto dalla scena
                     sceneManager.removeObject(idToRemove);
-                    break; // Esce dal loop per evitare iterazione su container modificato
+                    
+                    // Esci dal loop per evitare iterazione su container modificato
+                    ImGui::EndPopup();
+                    break;
                 }
                 ImGui::EndPopup();
             }
@@ -473,6 +562,84 @@ void renderSceneControlPanel() {
 
         ImGui::Separator();
         ImGui::Checkbox("Enable Picking", &pickingEnabled);
+    }
+}
+
+void processKeyboardShortcuts(GLFWwindow* window) {
+    // Salta se ImGui sta usando l'input
+    if (ImGui::GetIO().WantCaptureKeyboard) return;
+
+    static bool keyPressedCtrlA = false;
+    static bool keyPressedCtrlD = false;
+    static bool keyPressedDelete = false;
+    
+    // CTRL+A: Seleziona tutti gli oggetti
+    if ((glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) && 
+        glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+        
+        if (!keyPressedCtrlA) {
+            keyPressedCtrlA = true;
+            
+            // Seleziona tutti gli oggetti
+            multiSelectedObjectIds.clear();
+            for (const auto& obj : sceneManager.getObjects()) {
+                multiSelectedObjectIds.push_back(obj->getId());
+            }
+            multiSelectionMode = true;
+            
+            // Feedback visivo
+            std::cout << "Selected " << multiSelectedObjectIds.size() << " objects." << std::endl;
+        }
+    } else {
+        keyPressedCtrlA = false;
+    }
+    
+    // CTRL+D: Duplica l'oggetto selezionato
+    if ((glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) && 
+        glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+        
+        if (!keyPressedCtrlD && objectSelected) {
+            keyPressedCtrlD = true;
+            
+            auto selectedObj = sceneManager.getSelectedObject();
+            if (selectedObj) {
+                // Crea una copia dell'oggetto con un offset di posizione
+                glm::vec3 newPos = selectedObj->getPosition() + glm::vec3(0.5f, 0.0f, 0.5f);
+                auto newObj = sceneManager.duplicateObject(selectedObj->getId(), newPos);
+                
+                if (newObj) {
+                    // Seleziona il nuovo oggetto
+                    sceneManager.selectObject(newObj->getId());
+                    objectSelected = true;
+                    showSelectedModelPanel = true;
+                }
+            }
+        }
+    } else {
+        keyPressedCtrlD = false;
+    }
+    
+    // CANC: Elimina l'oggetto selezionato o gli oggetti multi-selezionati
+    if (glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS) {
+        if (!keyPressedDelete) {
+            keyPressedDelete = true;
+            
+            if (multiSelectionMode && !multiSelectedObjectIds.empty()) {
+                // Chiedi conferma per eliminazione multipla
+                showDeleteConfirmation = true;
+                // Implementa la logica di eliminazione multipla
+            }
+            else if (objectSelected) {
+                // Usa il sistema di conferma già implementato
+                auto selectedObj = sceneManager.getSelectedObject();
+                if (selectedObj) {
+                    showDeleteConfirmation = true;
+                    objectToDeleteId = selectedObj->getId();
+                }
+            }
+        }
+    } else {
+        keyPressedDelete = false;
     }
 }
 
@@ -561,6 +728,9 @@ int main() {
         // Input
         win.processInput();
         win.pollEvents();
+        
+        // Gestione scorciatoie da tastiera
+        processKeyboardShortcuts(win.getGLFWwindow());
 
         // Aggiorna le matrici una sola volta per frame
         int width, height;
@@ -622,108 +792,9 @@ int main() {
             {
                 updateCameraPosition();
             }
-            
+
             if (ImGui::Button("Reset View", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
                 resetCameraView();
-            }
-        }
-
-        // Dati modello selezionato
-        if (objectSelected && showSelectedModelPanel) {
-            ImGui::Separator();
-            if (ImGui::CollapsingHeader("Selected Object", ImGuiTreeNodeFlags_DefaultOpen)) {
-                auto selectedObj = sceneManager.getSelectedObject();
-
-                if (selectedObj) {
-                    ImGui::Text("Selected Object: %s", selectedObj->getName().c_str());
-
-                    // Posizione
-                    ImGui::Separator();
-                    ImGui::Text("Position:");
-
-                    glm::vec3 position = selectedObj->getPosition();
-                    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-                    bool posChanged = false;
-                    posChanged |= ImGui::InputFloat("X##pos", &position.x, 0.1f);
-                    ImGui::SameLine();
-                    posChanged |= ImGui::InputFloat("Y##pos", &position.y, 0.1f);
-                    ImGui::SameLine();
-                    posChanged |= ImGui::InputFloat("Z##pos", &position.z, 0.1f);
-                    ImGui::PopItemWidth();
-
-                    posChanged |= ImGui::SliderFloat("Pos X", &position.x, -10.0f, 10.0f);
-                    posChanged |= ImGui::SliderFloat("Pos Y", &position.y, -10.0f, 10.0f);
-                    posChanged |= ImGui::SliderFloat("Pos Z", &position.z, -10.0f, 10.0f);
-
-                    if (posChanged) {
-                        sceneManager.updateObjectPosition(selectedObj->getId(), position);
-                    }
-
-                    if (ImGui::Button("Reset Position", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
-                        position = glm::vec3(0.0f, 0.5f, 0.0f);
-                        sceneManager.updateObjectPosition(selectedObj->getId(), position);
-                    }
-
-                    // Scala
-                    ImGui::Separator();
-                    ImGui::Text("Scale");
-
-                    glm::vec3 scale = selectedObj->getScale();
-                    ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.25f);
-                    bool scaleChanged = false;
-                    scaleChanged |= ImGui::InputFloat("X##scale", &scale.x, 0.1f);
-                    ImGui::SameLine();
-                    scaleChanged |= ImGui::InputFloat("Y##scale", &scale.y, 0.1f);
-                    ImGui::SameLine();
-                    scaleChanged |= ImGui::InputFloat("Z##scale", &scale.z, 0.1f);
-                    ImGui::PopItemWidth();
-
-                    static bool maintainProportions = true;
-                    ImGui::Checkbox("Maintain proportions", &maintainProportions);
-
-                    if (scaleChanged) {
-                        if (maintainProportions) {
-                            static glm::vec3 lastScale = selectedObj->getScale();
-                            if (scale.x != lastScale.x) {
-                                float ratio = scale.x / lastScale.x;
-                                scale.y = ratio; scale.z = ratio;
-                            }
-                            else if (scale.y != lastScale.y) {
-                                float ratio = scale.y / lastScale.y;
-                                scale.x = ratio; scale.z = ratio;
-                            }
-                            else if (scale.z != lastScale.z) {
-                                float ratio = scale.z / lastScale.z;
-                                scale.x = ratio; scale.y = ratio;
-                            }
-                        }
-                        sceneManager.updateObjectScale(selectedObj->getId(), scale);
-                    }
-
-                    if (ImGui::Button("Reset Scale", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
-                        scale = glm::vec3(1.0f, 1.0f, 1.0f);
-                        sceneManager.updateObjectScale(selectedObj->getId(), scale);
-                    }
-
-                    // Rotazione
-                    ImGui::Separator();
-                    ImGui::Text("Rotation");
-
-                    glm::vec3 rotation = selectedObj->getRotation();
-                    bool rotChanged = false;
-                    rotChanged |= ImGui::SliderFloat("Rot X", &rotation.x, 0.0f, 360.0f);
-                    rotChanged |= ImGui::SliderFloat("Rot Y", &rotation.y, 0.0f, 360.0f);
-                    rotChanged |= ImGui::SliderFloat("Rot Z", &rotation.z, 0.0f, 360.0f);
-
-                    if (rotChanged) {
-                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
-                    }
-
-                    if (ImGui::Button("Reset Rotation", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
-                        rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
-                    }
-                }
             }
         }
 
@@ -762,6 +833,185 @@ int main() {
 
         ImGui::End(); // Fine sidebar
 
+        // Pannello per il modello selezionato (fuori dalla sidebar)
+        if (showSelectedModelPanel) {
+            ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+            ImGui::SetNextWindowPos(ImVec2(displaySize.x - selectedPanelSize.x - 10, 50), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(selectedPanelSize, ImGuiCond_FirstUseEver);
+            
+            if (ImGui::Begin("Selected Object", &showSelectedModelPanel)) {
+                auto selectedObj = sceneManager.getSelectedObject();
+
+                if (selectedObj) {
+                    // Opzione per fissare il pannello
+                    ImGui::Checkbox("Pin Panel", &pinSelectedModelPanel);
+                    
+                    ImGui::Text("Selected: %s", selectedObj->getName().c_str());
+                    ImGui::Separator();
+                    
+                    // Posizione - solo input fields, no sliders
+                    ImGui::Text("Position:");
+                    glm::vec3 position = selectedObj->getPosition();
+                    
+                    bool posChanged = false;
+                    
+                    // Layout input X, Y, Z
+                    float columnWidth = ImGui::GetContentRegionAvail().x / 3;
+                    
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("X:"); ImGui::SameLine();
+                    posChanged |= ImGui::InputFloat("##posX", &position.x, 0.1f);
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("Y:"); ImGui::SameLine();
+                    posChanged |= ImGui::InputFloat("##posY", &position.y, 0.1f);
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("Z:"); ImGui::SameLine();
+                    posChanged |= ImGui::InputFloat("##posZ", &position.z, 0.1f);
+                    ImGui::PopItemWidth();
+                    
+                    if (posChanged) {
+                        sceneManager.updateObjectPosition(selectedObj->getId(), position);
+                    }
+                    
+                    if (ImGui::Button("Reset Position", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                        sceneManager.resetObjectToInitialPosition(selectedObj->getId());
+                    }
+                    
+                    // Scala
+                    ImGui::Separator();
+                    ImGui::Text("Scale:");
+                    
+                    glm::vec3 scale = selectedObj->getScale();
+                    bool scaleChanged = false;
+                    
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("X:"); ImGui::SameLine();
+                    scaleChanged |= ImGui::InputFloat("##scaleX", &scale.x, 0.1f);
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("Y:"); ImGui::SameLine();
+                    scaleChanged |= ImGui::InputFloat("##scaleY", &scale.y, 0.1f);
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("Z:"); ImGui::SameLine();
+                    scaleChanged |= ImGui::InputFloat("##scaleZ", &scale.z, 0.1f);
+                    ImGui::PopItemWidth();
+                    
+                    static bool maintainProportions = true;
+                    ImGui::Checkbox("Maintain proportions", &maintainProportions);
+                    
+                    if (scaleChanged) {
+                        if (maintainProportions) {
+                            static glm::vec3 lastScale = selectedObj->getScale();
+                            if (scale.x != lastScale.x) {
+                                float ratio = scale.x / lastScale.x;
+                                scale.y = lastScale.y * ratio; 
+                                scale.z = lastScale.z * ratio;
+                            }
+                            else if (scale.y != lastScale.y) {
+                                float ratio = scale.y / lastScale.y;
+                                scale.x = lastScale.x * ratio; 
+                                scale.z = lastScale.z * ratio;
+                            }
+                            else if (scale.z != lastScale.z) {
+                                float ratio = scale.z / lastScale.z;
+                                scale.x = lastScale.x * ratio; 
+                                scale.y = lastScale.y * ratio;
+                            }
+                            lastScale = scale;
+                        }
+                        sceneManager.updateObjectScale(selectedObj->getId(), scale);
+                    }
+                    
+                    if (ImGui::Button("Reset Scale", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+                        sceneManager.updateObjectScale(selectedObj->getId(), scale);
+                    }
+                    
+                    // Rotazione
+                    ImGui::Separator();
+                    ImGui::Text("Rotation:");
+                    
+                    glm::vec3 rotation = selectedObj->getRotation();
+                    bool rotChanged = false;
+                    
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("X:"); ImGui::SameLine();
+                    rotChanged |= ImGui::InputFloat("##rotX", &rotation.x, 1.0f);
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("Y:"); ImGui::SameLine();
+                    rotChanged |= ImGui::InputFloat("##rotY", &rotation.y, 1.0f);
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushItemWidth(columnWidth - 10);
+                    ImGui::Text("Z:"); ImGui::SameLine();
+                    rotChanged |= ImGui::InputFloat("##rotZ", &rotation.z, 1.0f);
+                    ImGui::PopItemWidth();
+                    
+                    if (rotChanged) {
+                        // Normalizziamo i valori di rotazione tra 0 e 360 gradi
+                        rotation.x = fmodf(rotation.x, 360.0f);
+                        if (rotation.x < 0) rotation.x += 360.0f;
+                        
+                        rotation.y = fmodf(rotation.y, 360.0f);
+                        if (rotation.y < 0) rotation.y += 360.0f;
+                        
+                        rotation.z = fmodf(rotation.z, 360.0f);
+                        if (rotation.z < 0) rotation.z += 360.0f;
+                        
+                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
+                    }
+                    
+                    if (ImGui::Button("Reset Rotation", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                        rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
+                    }
+                } else {
+                    ImGui::Text("No object selected");
+                    if (!pinSelectedModelPanel) {
+                        showSelectedModelPanel = false;
+                    }
+                }
+                
+                // Memorizziamo la dimensione attuale della finestra per il prossimo frame
+                selectedPanelSize = ImGui::GetWindowSize();
+
+                // Aggiungi un separatore
+                ImGui::Separator();
+
+                // Crea uno stile per il pulsante rosso di eliminazione
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));         // Rosso
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));  // Rosso più chiaro
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));   // Rosso più scuro
+
+                // Pulsante di eliminazione a fondo pannello
+                if (ImGui::Button("Delete Object", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                    // Invece di eliminare subito, mostra la finestra di conferma
+                    showDeleteConfirmation = true;
+                    objectToDeleteId = selectedObj->getId();
+                }
+
+                // Ripristina lo stile originale
+                ImGui::PopStyleColor(3);
+
+                ImGui::End();
+            }
+        }
+
         // Finestra help
         if (shoeHelpWindow) {
             ImGui::SetNextWindowPos(ImVec2(SIDEBAR_WIDTH + 10, 10), ImGuiCond_FirstUseEver);
@@ -789,6 +1039,9 @@ int main() {
                 ImGui::BulletText("Add object: select type and click 'Add Object'");
                 ImGui::BulletText("Select object: click on an object in the scene list");
                 ImGui::BulletText("Delete object: right-click on object in list and select Delete");
+                ImGui::BulletText("Duplicate object: CTRL+D");
+                ImGui::BulletText("Select all objects: CTRL+A");
+                ImGui::BulletText("Delete selected: DELETE key");
                 ImGui::Separator();
                 if (ImGui::Button("Close", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
                     shoeHelpWindow = false;
@@ -808,6 +1061,72 @@ int main() {
             ImGuiWindowFlags_NoSavedSettings);
         ImGui::Text("FPS: %.1f", fps);
         ImGui::End();
+
+        // Finestra modale di conferma eliminazione
+        if (showDeleteConfirmation) {
+            // Centra la finestra di dialogo
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowSize(ImVec2(300, 0));
+            
+            // Imposta lo stile della finestra modale
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
+            
+            if (ImGui::BeginPopupModal("Delete Object?", &showDeleteConfirmation, 
+                                  ImGuiWindowFlags_AlwaysAutoResize | 
+                                  ImGuiWindowFlags_NoSavedSettings)) {
+                ImGui::Text("Are you sure you want to delete this object?");
+                ImGui::Text("This operation cannot be undone.");
+                ImGui::Separator();
+                
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
+                
+                // Layout con due pulsanti allineati
+                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                
+                if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
+                    showDeleteConfirmation = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                
+                ImGui::SameLine();
+                
+                // Pulsante di conferma in rosso
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
+                
+                if (ImGui::Button("Delete", ImVec2(buttonWidth, 0))) {
+                    // Procedi con l'eliminazione
+                    if (sceneManager.getSelectedObjectId() == objectToDeleteId) {
+                        objectSelected = false;
+                        showSelectedModelPanel = false;
+                        pinSelectedModelPanel = false;
+                    }
+                    
+                    sceneManager.removeObject(objectToDeleteId);
+                    showDeleteConfirmation = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                
+                ImGui::PopStyleColor(3);
+                
+                // Permette anche la chiusura con Esc
+                if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                    showDeleteConfirmation = false;
+                    ImGui::CloseCurrentPopup();
+                }
+                
+                ImGui::EndPopup();
+            }
+            
+            ImGui::PopStyleVar();
+            
+            // Apri il popup automaticamente
+            if (showDeleteConfirmation) {
+                ImGui::OpenPopup("Delete Object?");
+            }
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

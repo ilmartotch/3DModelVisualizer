@@ -1,4 +1,5 @@
 #pragma once
+
 #include "SceneObject.h"
 #include "ModelManager.h"
 #include "Shaders.h" // Per SetUniformMat4
@@ -13,6 +14,7 @@ private:
     std::shared_ptr<SceneObject> selectedObject = nullptr;
     ModelManager& modelManager;
     unsigned int nextId = 1;
+    unsigned int selectedObjectId = 0;
 
 public:
     SceneManager(ModelManager& manager) : modelManager(manager) {}
@@ -23,6 +25,8 @@ public:
     bool removeObject(unsigned int id);
     void selectObject(unsigned int id);
     void deselectAll();
+    void resetObjectToInitialPosition(unsigned int id);
+    std::shared_ptr<SceneObject> duplicateObject(unsigned int sourceId, const glm::vec3& newPosition);
 
     // Rendering
     void renderAll(GLuint shader, const glm::mat4& view, const glm::mat4& projection,
@@ -34,6 +38,10 @@ public:
     std::shared_ptr<SceneObject> getSelectedObject() const { return selectedObject; }
     size_t getObjectCount() const { return objects.size(); }
     bool hasObjects() const { return !objects.empty(); }
+
+    unsigned int getSelectedObjectId() const {
+        return selectedObject ? selectedObject->getId() : 0;
+    }
 
     // Utility per picking
     glm::vec3 idToColor(unsigned int id);
@@ -51,6 +59,8 @@ public:
     // Calcola una posizione di spawn valida nel campo visivo della telecamera
     glm::vec3 findValidSpawnPosition(const glm::vec3& cameraPos, const glm::vec3& cameraTarget,
                                     float yOffset = 0.5f, float padding = 1.0f) const;
+
+    void renameObject(unsigned int id, const std::string& newName);
 
 private:
     void renderObject(std::shared_ptr<SceneObject> obj, GLuint shader,

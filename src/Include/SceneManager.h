@@ -45,6 +45,13 @@ public:
     void updateObjectRotation(unsigned int id, const glm::vec3& rotation);
     void updateObjectScale(unsigned int id, const glm::vec3& scale);
 
+    // Verifica se una posizione è occupata
+    bool isPositionOccupied(const glm::vec3& position, float radius = 1.0f) const;
+
+    // Calcola una posizione di spawn valida nel campo visivo della telecamera
+    glm::vec3 findValidSpawnPosition(const glm::vec3& cameraPos, const glm::vec3& cameraTarget,
+                                    float yOffset = 0.5f, float padding = 1.0f) const;
+
 private:
     void renderObject(std::shared_ptr<SceneObject> obj, GLuint shader,
         const glm::mat4& view, const glm::mat4& projection,
@@ -54,7 +61,3 @@ private:
     void renderOutline(std::shared_ptr<SceneObject> obj, GLuint shader, const glm::mat4& modelMatrix);
     void applyRenderMode(Model::RenderMode mode);
 };
-
-//la classe SceneManager è fondamentale per la gestione degli oggetti nella scena, il renderig e la selezione
-// e fornisce metodi per aggiungere, rimuovere e selezionare oggetti, oltre a gestire il rendering
-// sviluppo dei metodi all'intenro di SceneManager.cpp

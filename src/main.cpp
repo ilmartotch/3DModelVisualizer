@@ -40,6 +40,8 @@ void renderSceneControlPanel();
 void processMousePicking(int x, int y);
 void handlePickingResult(const glm::vec3& idColor);
 void resetCameraView();
+bool isPositionOccupied(const glm::vec3& position, float radius, const SceneManager& sceneManager);
+glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& sceneManager);
 
 
 // Variabili window
@@ -101,6 +103,31 @@ ModelManager modelManager;
 
 // SceneManager per la gestione della scena
 SceneManager sceneManager(modelManager);
+
+// Controlla se una posizione è occupata (versione semplificata)
+bool isPositionOccupied(const glm::vec3& position, float radius, const SceneManager& manager) {
+    for (const auto& obj : manager.getObjects()) {
+        // Semplice controllo della distanza sul piano XZ
+        if (glm::distance(glm::vec2(obj->getPosition().x, obj->getPosition().z), glm::vec2(position.x, position.z)) < radius * 2.0f) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Calcola la posizione di spawn, gestendo le collisioni
+glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& manager) {
+    // Calcola l'offset verticale in base al tipo di modello
+    float yOffset = 0.0f;
+    if (modelName == "Cube" || modelName == "Sphere") {
+        yOffset = 0.5f;
+    } else if (modelName == "Pyramid") {
+        yOffset = 0.0f;
+    }
+    
+    return manager.findValidSpawnPosition(mouseControl.camPos, cameraTarget, yOffset, 1.0f);
+}
+
 
 // Ridimensionamento della finestra
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
@@ -397,12 +424,11 @@ void renderSceneControlPanel() {
 
             if (ImGui::Button("Add Object", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30)) &&
                 selectedModelIndex < modelNames.size()) {
-                // Genera posizione casuale
-                float randX = (float)rand() / RAND_MAX * 4.0f - 2.0f;
-                float randZ = (float)rand() / RAND_MAX * 4.0f - 2.0f;
+                
+                const std::string& modelName = modelNames[selectedModelIndex];
+                glm::vec3 spawnPos = calculateSpawnPosition(modelName, mouseControl.cameraTarget, sceneManager);
 
-                auto newObj = sceneManager.addObject(modelNames[selectedModelIndex],
-                    glm::vec3(randX, 0.5f, randZ));
+                auto newObj = sceneManager.addObject(modelName, spawnPos);
                 if (newObj) {
                     sceneManager.selectObject(newObj->getId());
                     objectSelected = true;

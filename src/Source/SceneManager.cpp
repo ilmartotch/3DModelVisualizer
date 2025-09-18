@@ -18,29 +18,23 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
 
 // Implementazione del metodo removeObject
 bool SceneManager::removeObject(unsigned int id) {
-    // Trova l'indice dell'oggetto da rimuovere
-    size_t index = 0;
-    bool found = false;
+    // Trova l'oggetto da rimuovere
+    auto it = std::find_if(objects.begin(), objects.end(),
+                          [id](const std::shared_ptr<SceneObject>& obj) {
+                              return obj->getId() == id;
+                          });
     
-    for (size_t i = 0; i < objects.size(); ++i) {
-        if (objects[i]->getId() == id) {
-            index = i;
-            found = true;
-            break;
-        }
-    }
-    
-    if (!found) {
+    if (it == objects.end()) {
         return false;  // Oggetto non trovato
     }
     
     // Se stiamo rimuovendo l'oggetto selezionato, deseleziona tutto
-    if (objects[index]->getSelected()) {
+    if ((*it)->getSelected()) {
         selectedObjectId = 0;
     }
     
     // Rimuovi l'oggetto dalla lista
-    objects.erase(objects.begin() + index);
+    objects.erase(it);
     
     return true;
 }

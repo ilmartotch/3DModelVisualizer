@@ -218,7 +218,7 @@ unsigned int lastClickedObjectId = 0;
 
 // Aggiungi queste variabili globali
 bool pinSelectedModelPanel = false;  // Per "fissare" il pannello
-ImVec2 selectedPanelSize = ImVec2(300, 0);  // Dimensione del pannello
+ImVec2 selectedPanelSize = ImVec2(350, 0);  // Dimensione del pannello
 
 // Modifica la funzione handlePickingResult per gestire la visualizzazione del pannello
 void handlePickingResult(const glm::vec3& idColor) {
@@ -836,9 +836,15 @@ int main() {
         // Pannello per il modello selezionato (fuori dalla sidebar)
         if (showSelectedModelPanel) {
             ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+            
+            // Imposta una dimensione minima garantita per il pannello
+            ImVec2 minSize = ImVec2(350, 400);
+            ImGui::SetNextWindowSizeConstraints(minSize, ImVec2(FLT_MAX, FLT_MAX));
+            
             ImGui::SetNextWindowPos(ImVec2(displaySize.x - selectedPanelSize.x - 10, 50), ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(selectedPanelSize, ImGuiCond_FirstUseEver);
             
+            // Inizia il pannello dell'oggetto selezionato
             if (ImGui::Begin("Selected Object", &showSelectedModelPanel)) {
                 auto selectedObj = sceneManager.getSelectedObject();
 
@@ -980,6 +986,24 @@ int main() {
                         rotation = glm::vec3(0.0f, 0.0f, 0.0f);
                         sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
                     }
+                    
+                    // Aggiungi uno spazio prima del pulsante di eliminazione
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                    
+                    // Crea uno stile per il pulsante rosso di eliminazione
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));         // Rosso
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));  // Rosso più chiaro
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));   // Rosso più scuro
+
+                    // Pulsante di eliminazione a fondo pannello
+                    if (ImGui::Button("Delete Object", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                        showDeleteConfirmation = true;
+                        objectToDeleteId = selectedObj->getId();
+                    }
+
+                    // Ripristina lo stile originale
+                    ImGui::PopStyleColor(3);
                 } else {
                     ImGui::Text("No object selected");
                     if (!pinSelectedModelPanel) {
@@ -987,27 +1011,11 @@ int main() {
                     }
                 }
                 
-                // Memorizziamo la dimensione attuale della finestra per il prossimo frame
-                selectedPanelSize = ImGui::GetWindowSize();
-
-                // Aggiungi un separatore
-                ImGui::Separator();
-
-                // Crea uno stile per il pulsante rosso di eliminazione
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));         // Rosso
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));  // Rosso più chiaro
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));   // Rosso più scuro
-
-                // Pulsante di eliminazione a fondo pannello
-                if (ImGui::Button("Delete Object", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-                    // Invece di eliminare subito, mostra la finestra di conferma
-                    showDeleteConfirmation = true;
-                    objectToDeleteId = selectedObj->getId();
+                // Salva le dimensioni solo se l'utente ha effettivamente ridimensionato la finestra
+                if (ImGui::IsWindowHovered() && ImGui::IsMouseDragging(0)) {
+                    selectedPanelSize = ImGui::GetWindowSize();
                 }
-
-                // Ripristina lo stile originale
-                ImGui::PopStyleColor(3);
-
+                
                 ImGui::End();
             }
         }
@@ -1066,15 +1074,18 @@ int main() {
         if (showDeleteConfirmation) {
             // Centra la finestra di dialogo
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-            ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(300, 0));
+            ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            
+            // Assicurati di aprire il popup PRIMA di BeginPopupModal
+            ImGui::OpenPopup("Delete Object?");
             
             // Imposta lo stile della finestra modale
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
             
-            if (ImGui::BeginPopupModal("Delete Object?", &showDeleteConfirmation, 
-                                  ImGuiWindowFlags_AlwaysAutoResize | 
-                                  ImGuiWindowFlags_NoSavedSettings)) {
+            // Usa BeginPopupModal per creare la finestra di conferma
+            if (ImGui::BeginPopupModal("Delete Object?", NULL, 
+                              ImGuiWindowFlags_AlwaysAutoResize | 
+                              ImGuiWindowFlags_NoSavedSettings)) {
                 ImGui::Text("Are you sure you want to delete this object?");
                 ImGui::Text("This operation cannot be undone.");
                 ImGui::Separator();
@@ -1104,7 +1115,10 @@ int main() {
                         pinSelectedModelPanel = false;
                     }
                     
+                    // Effettua l'eliminazione
                     sceneManager.removeObject(objectToDeleteId);
+                    
+                    // Resetta lo stato e chiudi il popup
                     showDeleteConfirmation = false;
                     ImGui::CloseCurrentPopup();
                 }
@@ -1121,11 +1135,6 @@ int main() {
             }
             
             ImGui::PopStyleVar();
-            
-            // Apri il popup automaticamente
-            if (showDeleteConfirmation) {
-                ImGui::OpenPopup("Delete Object?");
-            }
         }
 
         ImGui::Render();

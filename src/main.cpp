@@ -17,6 +17,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <ImGuizmo.h>
 
 // Modelli
 #include "Include/Model.h"
@@ -27,7 +28,16 @@
 #include "Include/ModelManager.h"
 #include "Include/SceneManager.h"
 
-// Forward declarations
+// Aggiungi variabili globali per ImGuizmo
+static ImGuizmo::OPERATION currentGizmoOperation = ImGuizmo::UNIVERSAL;
+static ImGuizmo::MODE currentGizmoMode = ImGuizmo::WORLD;
+
+// Aggiungi queste variabili globali vicino alle altre variabili di ImGuizmo
+static bool useUniformScaling = true;
+static float snapValues[3] = { 0.1f, 0.1f, 0.1f }; // Valori di snap per posizione, rotazione, scala
+static bool useSnap = false;
+
+// Forward declarations (aggiungi la nuova funzione)
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 void updateCameraPosition();
 void applyRenderMode(Model::RenderMode mode);
@@ -43,6 +53,7 @@ void resetCameraView();
 bool isPositionOccupied(const glm::vec3& position, float radius, const SceneManager& sceneManager);
 glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& sceneManager);
 void processKeyboardShortcuts(GLFWwindow* window);
+void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection); // Nuova funzione
 
 // Variabili window
 int windoWidth = 800;
@@ -65,6 +76,7 @@ float moveSpeed = 0.1f;
 bool objectSelected = false;
 unsigned int objectToDeleteId = 0;
 bool showDeleteConfirmation = false;
+static glm::vec3 displayedEulerAngles(0.0f);
 
 std::vector<unsigned int> multiSelectedObjectIds;
 bool multiSelectionMode = false;
@@ -250,6 +262,19 @@ void handlePickingResult(const glm::vec3& idColor) {
             lastClickTime = currentTime;
             lastClickedObjectId = objectId;
         }
+        
+        // Se l'oggetto selezionato è cambiato, aggiorna gli angoli di visualizzazione
+        if (sceneManager.getSelectedObjectId() != objectId) {
+            sceneManager.selectObject(objectId);
+            objectSelected = true;
+            showSelectedModelPanel = true;
+            
+            // Inizializza gli angoli di visualizzazione dal quaternione dell'oggetto
+            auto selectedObj = sceneManager.getSelectedObject();
+            if(selectedObj) {
+                displayedEulerAngles = glm::degrees(glm::eulerAngles(selectedObj->getRotation()));
+            }
+        }
     } else {
         // Nessun oggetto selezionato
         sceneManager.deselectAll();
@@ -267,9 +292,9 @@ void handlePickingResult(const glm::vec3& idColor) {
 }
 
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-    // Prima verifichiamo se il mouse è sopra ImGui
-    if (ImGui::GetIO().WantCaptureMouse) {
-        return; // Non gestire il click se ImGui lo vuole catturare
+    // Prima verifichiamo se il mouse è sopra ImGui o ImGuizmo
+    if (ImGui::GetIO().WantCaptureMouse || ImGuizmo::IsOver()) {
+        return; // Non gestire il click se ImGui o ImGuizmo lo vogliono catturare
     }
 
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
@@ -341,43 +366,7 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
     const float sensitivity = 0.3f;
     auto selectedObj = sceneManager.getSelectedObject();
 
-    if (objectMoving && selectedObj) {
-        glm::vec3 currentMousePos = glm::vec3((float)xpos, (float)ypos, 0.0f);
-        glm::vec3 mouseDelta = currentMousePos - lastMousePos;
-        glm::vec3 newPosition = selectedObj->getPosition();
-
-        // Aggiorna la posizione dell'oggetto selezionato
-        switch (currentMoveAxis) {
-        case MoveAxis::X_AXIS:
-            newPosition.x += mouseDelta.x * moveSpeed;
-            break;
-        case MoveAxis::Y_AXIS:
-            newPosition.y -= mouseDelta.y * moveSpeed;
-            break;
-        case MoveAxis::Z_AXIS:
-            newPosition.z += mouseDelta.y * moveSpeed;
-            break;
-        case MoveAxis::NONE:
-            newPosition.x += mouseDelta.x * moveSpeed;
-            newPosition.y -= mouseDelta.y * moveSpeed;
-            break;
-        }
-
-        lastMousePos = currentMousePos;
-        sceneManager.updateObjectPosition(selectedObj->getId(), newPosition);
-
-    }
-    else if (mouseControl.isPressed && selectedObj) {
-        glm::vec3 newRotation = selectedObj->getRotation();
-        newRotation.x += yoffset * sensitivity;
-        newRotation.y += xoffset * sensitivity;
-
-        newRotation.x = fmodf(newRotation.x, 360.0f);
-        newRotation.y = fmodf(newRotation.y, 360.0f);
-
-        sceneManager.updateObjectRotation(selectedObj->getId(), newRotation);
-    }
-    else if (mouseControl.isOrbiting) {
+    if (mouseControl.isOrbiting) {
         mouseControl.orbitalAngleX += xoffset * sensitivity;
         mouseControl.orbitalAngleY += yoffset * sensitivity;
         if (mouseControl.orbitalAngleY > 85.0f) mouseControl.orbitalAngleY = 85.0f;
@@ -569,77 +558,53 @@ void processKeyboardShortcuts(GLFWwindow* window) {
     // Salta se ImGui sta usando l'input
     if (ImGui::GetIO().WantCaptureKeyboard) return;
 
+    // Gestisci prima le combinazioni con modificatori
+    bool ctrlPressed = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
+                       glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
+    bool shiftPressed = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
+                        glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
+    
     static bool keyPressedCtrlA = false;
     static bool keyPressedCtrlD = false;
     static bool keyPressedDelete = false;
+    static bool keyPressedT = false;
+    static bool keyPressedR = false;
+    static bool keyPressedS = false;
+    static bool keyPressedU = false; // Per la modalità Universale
     
-    // CTRL+A: Seleziona tutti gli oggetti
-    if ((glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) && 
-        glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+    // Modalità di ImGuizmo con singoli tasti
+    if (objectSelected) {
+        // Tasto T: modalità traslazione
+        if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS && !keyPressedT) {
+            currentGizmoOperation = ImGuizmo::TRANSLATE;
+            keyPressedT = true;
+        } else if (glfwGetKey(window, GLFW_KEY_T) == GLFW_RELEASE) {
+            keyPressedT = false;
+        }
         
-        if (!keyPressedCtrlA) {
-            keyPressedCtrlA = true;
-            
-            // Seleziona tutti gli oggetti
-            multiSelectedObjectIds.clear();
-            for (const auto& obj : sceneManager.getObjects()) {
-                multiSelectedObjectIds.push_back(obj->getId());
-            }
-            multiSelectionMode = true;
-            
-            // Feedback visivo
-            std::cout << "Selected " << multiSelectedObjectIds.size() << " objects." << std::endl;
+        // Tasto R: modalità rotazione
+        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && !keyPressedR) {
+            currentGizmoOperation = ImGuizmo::ROTATE;
+            keyPressedR = true;
+        } else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE) {
+            keyPressedR = false;
         }
-    } else {
-        keyPressedCtrlA = false;
-    }
-    
-    // CTRL+D: Duplica l'oggetto selezionato
-    if ((glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) && 
-        glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
         
-        if (!keyPressedCtrlD && objectSelected) {
-            keyPressedCtrlD = true;
-            
-            auto selectedObj = sceneManager.getSelectedObject();
-            if (selectedObj) {
-                // Crea una copia dell'oggetto con un offset di posizione
-                glm::vec3 newPos = selectedObj->getPosition() + glm::vec3(0.5f, 0.0f, 0.5f);
-                auto newObj = sceneManager.duplicateObject(selectedObj->getId(), newPos);
-                
-                if (newObj) {
-                    // Seleziona il nuovo oggetto
-                    sceneManager.selectObject(newObj->getId());
-                    objectSelected = true;
-                    showSelectedModelPanel = true;
-                }
-            }
+        // Tasto S: modalità scala
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && !keyPressedS) {
+            currentGizmoOperation = ImGuizmo::SCALE;
+            keyPressedS = true;
+        } else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_RELEASE) {
+            keyPressedS = false;
         }
-    } else {
-        keyPressedCtrlD = false;
-    }
-    
-    // CANC: Elimina l'oggetto selezionato o gli oggetti multi-selezionati
-    if (glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS) {
-        if (!keyPressedDelete) {
-            keyPressedDelete = true;
-            
-            if (multiSelectionMode && !multiSelectedObjectIds.empty()) {
-                // Chiedi conferma per eliminazione multipla
-                showDeleteConfirmation = true;
-                // Implementa la logica di eliminazione multipla
-            }
-            else if (objectSelected) {
-                // Usa il sistema di conferma già implementato
-                auto selectedObj = sceneManager.getSelectedObject();
-                if (selectedObj) {
-                    showDeleteConfirmation = true;
-                    objectToDeleteId = selectedObj->getId();
-                }
-            }
+
+        // Tasto U: modalità universale
+        if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS && !keyPressedU) {
+            currentGizmoOperation = ImGuizmo::UNIVERSAL;
+            keyPressedU = true;
+        } else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_RELEASE) {
+            keyPressedU = false;
         }
-    } else {
-        keyPressedDelete = false;
     }
 }
 
@@ -756,11 +721,13 @@ int main() {
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-        ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-
+        
+        // Renderizza ImGuizmo prima di ImGui ma dopo ImGui::NewFrame()
+        renderImGuizmo(view, projection);
+        
         // Creazione del menu ImGui
         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, displaySize.y), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, ImGui::GetIO().DisplaySize.y), ImGuiCond_Always);
         ImGui::Begin("##Sidebar", nullptr,
             ImGuiWindowFlags_NoTitleBar |
             ImGuiWindowFlags_NoMove |
@@ -788,12 +755,14 @@ int main() {
 
         // Regolazione distanza telecamera
         if (ImGui::CollapsingHeader("Camera Control", ImGuiTreeNodeFlags_DefaultOpen)) {
-            if (ImGui::SliderFloat("Camera Distance", &mouseControl.cameraDistance, 0.5f, 15.0f))
-            {
+            // Usa PushItemWidth per impostare la larghezza relativa
+            ImGui::PushItemWidth(ImGui::GetWindowWidth() * 0.7f);
+            if (ImGui::SliderFloat("Distance", &mouseControl.cameraDistance, 0.5f, 15.0f)) {
                 updateCameraPosition();
             }
+            ImGui::PopItemWidth();
 
-            if (ImGui::Button("Reset View", ImVec2(ImGui::GetWindowWidth() * 0.9f, 30))) {
+            if (ImGui::Button("Reset View", ImVec2(-1, 0))) { // -1 per usare tutta la larghezza
                 resetCameraView();
             }
         }
@@ -849,8 +818,63 @@ int main() {
                 auto selectedObj = sceneManager.getSelectedObject();
 
                 if (selectedObj) {
-                    // Opzione per fissare il pannello
-                    ImGui::Checkbox("Pin Panel", &pinSelectedModelPanel);
+                    // Aggiungi un selettore per l'operazione di ImGuizmo con bottoni on/off
+                    ImGui::Text("Transformation Mode:");
+                    
+                    // Pulsanti per modalità con stile toggle
+                    bool isTranslate = currentGizmoOperation == ImGuizmo::TRANSLATE;
+                    bool isRotate = currentGizmoOperation == ImGuizmo::ROTATE;
+                    bool isScale = currentGizmoOperation == ImGuizmo::SCALE;
+                    bool isUniversal = currentGizmoOperation == ImGuizmo::UNIVERSAL;
+                    
+                    // Stile per pulsanti attivi/inattivi
+                    ImGui::PushStyleColor(ImGuiCol_Button, isTranslate ? ImVec4(0.6f, 0.6f, 1.0f, 1.0f) : ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
+                    if (ImGui::Button("T", ImVec2(30, 30))) {
+                        // Toggle tra TRANSLATE e UNIVERSAL
+                        currentGizmoOperation = (isTranslate) ? ImGuizmo::UNIVERSAL : ImGuizmo::TRANSLATE;
+                    }
+                    ImGui::PopStyleColor();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Button, isRotate ? ImVec4(0.6f, 0.6f, 1.0f, 1.0f) : ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
+                    if (ImGui::Button("R", ImVec2(30, 30))) {
+                        // Toggle tra ROTATE e UNIVERSAL
+                        currentGizmoOperation = (isRotate) ? ImGuizmo::UNIVERSAL : ImGuizmo::ROTATE;
+                    }
+                    ImGui::PopStyleColor();
+                    
+                    ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Button, isScale ? ImVec4(0.6f, 0.6f, 1.0f, 1.0f) : ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
+                    if (ImGui::Button("S", ImVec2(30, 30))) {
+                        // Toggle tra SCALE e UNIVERSAL
+                        currentGizmoOperation = (isScale) ? ImGuizmo::UNIVERSAL : ImGuizmo::SCALE;
+                    }
+                    ImGui::PopStyleColor();
+                    
+                    // Aggiungere spiegazione della modalità attiva
+                    ImGui::SameLine();
+                    if (isTranslate) ImGui::Text("Translate Mode");
+                    else if (isRotate) ImGui::Text("Rotate Mode");
+                    else if (isScale) ImGui::Text("Scale Mode");
+                    else ImGui::Text("Universal Mode");
+                    
+                    // Opzioni di scaling solo se è attiva la modalità scala
+                    if (currentGizmoOperation == ImGuizmo::SCALE) {
+                        ImGui::Checkbox("Uniform Scaling", &useUniformScaling);
+                    }
+                    
+                    // Opzioni di snap
+                    ImGui::Checkbox("Use Snap", &useSnap);
+                    if (useSnap) {
+                        if (currentGizmoOperation == ImGuizmo::TRANSLATE)
+                            ImGui::InputFloat3("Snap", snapValues);
+                        else if (currentGizmoOperation == ImGuizmo::ROTATE)
+                            ImGui::InputFloat("Angle Snap", &snapValues[1]);
+                        else if (currentGizmoOperation == ImGuizmo::SCALE)
+                            ImGui::InputFloat("Scale Snap", &snapValues[2]);
+                    }
+                        
+                    ImGui::Separator();
                     
                     ImGui::Text("Selected: %s", selectedObj->getName().c_str());
                     ImGui::Separator();
@@ -946,47 +970,93 @@ int main() {
                     
                     // Rotazione
                     ImGui::Separator();
-                    ImGui::Text("Rotation:");
+                    ImGui::Text("Rotation (Euler Angles):");
                     
-                    glm::vec3 rotation = selectedObj->getRotation();
+                    // Salva gli angoli precedenti
+                    glm::vec3 previousAngles = displayedEulerAngles;
+
                     bool rotChanged = false;
-                    
+
+                    // Usa displayedEulerAngles per l'interfaccia
+                    columnWidth = ImGui::GetContentRegionAvail().x / 3;
                     ImGui::PushItemWidth(columnWidth - 10);
                     ImGui::Text("X:"); ImGui::SameLine();
-                    rotChanged |= ImGui::InputFloat("##rotX", &rotation.x, 1.0f);
+                    rotChanged |= ImGui::InputFloat("##rotX", &displayedEulerAngles.x, 1.0f, 0.0f, "%.2f");
                     ImGui::PopItemWidth();
-                    
+
                     ImGui::SameLine();
                     ImGui::PushItemWidth(columnWidth - 10);
                     ImGui::Text("Y:"); ImGui::SameLine();
-                    rotChanged |= ImGui::InputFloat("##rotY", &rotation.y, 1.0f);
+                    rotChanged |= ImGui::InputFloat("##rotY", &displayedEulerAngles.y, 1.0f, 0.0f, "%.2f");
                     ImGui::PopItemWidth();
-                    
+
                     ImGui::SameLine();
                     ImGui::PushItemWidth(columnWidth - 10);
                     ImGui::Text("Z:"); ImGui::SameLine();
-                    rotChanged |= ImGui::InputFloat("##rotZ", &rotation.z, 1.0f);
+                    rotChanged |= ImGui::InputFloat("##rotZ", &displayedEulerAngles.z, 1.0f, 0.0f, "%.2f");
                     ImGui::PopItemWidth();
-                    
+
                     if (rotChanged) {
-                        // Normalizziamo i valori di rotazione tra 0 e 360 gradi
-                        rotation.x = fmodf(rotation.x, 360.0f);
-                        if (rotation.x < 0) rotation.x += 360.0f;
+                        // Calcola la differenza di rotazione
+                        glm::vec3 delta = displayedEulerAngles - previousAngles;
                         
-                        rotation.y = fmodf(rotation.y, 360.0f);
-                        if (rotation.y < 0) rotation.y += 360.0f;
+                        // Crea un quaternione dalla differenza e applicalo alla rotazione esistente
+                        glm::quat deltaQuat = glm::quat(glm::radians(delta));
+                        glm::quat newRotation = deltaQuat * selectedObj->getRotation();
                         
-                        rotation.z = fmodf(rotation.z, 360.0f);
-                        if (rotation.z < 0) rotation.z += 360.0f;
-                        
-                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
+                        sceneManager.updateObjectRotation(selectedObj->getId(), newRotation);
                     }
                     
                     if (ImGui::Button("Reset Rotation", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-                        rotation = glm::vec3(0.0f, 0.0f, 0.0f);
-                        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
+                        sceneManager.updateObjectRotation(selectedObj->getId(), glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+                        displayedEulerAngles = glm::vec3(0.0f); // Resetta anche gli angoli di visualizzazione
                     }
                     
+                    // Aggiungi questo nel pannello Selected Object
+                    if (selectedObj) {
+                        // Opzione per fissare il pannello
+                        ImGui::Checkbox("Pin Panel", &pinSelectedModelPanel);
+    
+                        // Campo per rinominare l'oggetto
+                        static char nameBuffer[128] = "";
+                        static bool isEditingName = false;
+    
+                        if (!isEditingName) {
+                            // Mostra nome e pulsante Edit
+                            ImGui::Text("Name: %s", selectedObj->getName().c_str());
+                            ImGui::SameLine();
+                            if (ImGui::Button("Edit")) {
+                                isEditingName = true;
+                                strncpy(nameBuffer, selectedObj->getName().c_str(), sizeof(nameBuffer) - 1);
+                                nameBuffer[sizeof(nameBuffer) - 1] = '\0'; // Assicura terminazione
+                            }
+                        } else {
+                            // Mostra campo di input per modificare il nome
+                            ImGui::Text("Name: ");
+                            ImGui::SameLine();
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 50);
+                            if (ImGui::InputText("##edit_name", nameBuffer, sizeof(nameBuffer), 
+                                                ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                sceneManager.renameObject(selectedObj->getId(), nameBuffer);
+                                isEditingName = false;
+                            }
+                            ImGui::PopItemWidth();
+        
+                            ImGui::SameLine();
+                            if (ImGui::Button("Ok")) {
+                                sceneManager.renameObject(selectedObj->getId(), nameBuffer);
+                                isEditingName = false;
+                            }
+        
+                            // Gestisci la perdita di focus
+                            if (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0) && !ImGui::IsItemHovered()) {
+                                isEditingName = false;
+                            }
+                        }
+    
+                        ImGui::Separator();
+                    }
+
                     // Aggiungi uno spazio prima del pulsante di eliminazione
                     ImGui::Separator();
                     ImGui::Spacing();
@@ -1158,4 +1228,54 @@ int main() {
 
     glfwTerminate();
     return 0;
+}
+
+// Renderizza ImGuizmo per il modello selezionato
+void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
+    auto selectedObj = sceneManager.getSelectedObject();
+    if (!selectedObj || !objectSelected) {
+        return;
+    }
+
+    ImGuizmo::BeginFrame();
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+    ImGuizmo::SetRect(0, 0, (float)windoWidth, (float)windowHeight);
+
+    glm::mat4 modelMatrix = selectedObj->getModelMatrix();
+
+    ImGuizmo::SetGizmoSizeClipSpace(0.15f);
+
+    // Manipola la matrice con ImGuizmo
+    ImGuizmo::Manipulate(
+        glm::value_ptr(view),
+        glm::value_ptr(projection),
+        currentGizmoOperation,
+        currentGizmoMode,
+        glm::value_ptr(modelMatrix)
+    );
+
+    if (ImGuizmo::IsUsing()) {
+        glm::vec3 position, euler, scale;
+        glm::quat rotation;
+    
+        ImGuizmo::DecomposeMatrixToComponents(
+            glm::value_ptr(modelMatrix),
+            glm::value_ptr(position),
+            glm::value_ptr(euler), // Decomponi in Euler per calcolare il delta
+            glm::value_ptr(scale)
+        );
+    
+        // Calcola il delta di rotazione e applicalo ai nostri angoli di visualizzazione
+        glm::vec3 deltaRotation = euler - glm::degrees(glm::eulerAngles(selectedObj->getRotation()));
+        displayedEulerAngles += deltaRotation;
+    
+        // Crea il nuovo quaternione dagli angoli di visualizzazione aggiornati
+        rotation = glm::quat(glm::radians(displayedEulerAngles));
+    
+        // Aggiorna l'oggetto
+        sceneManager.updateObjectPosition(selectedObj->getId(), position);
+        sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
+        sceneManager.updateObjectScale(selectedObj->getId(), scale);
+    }
 }

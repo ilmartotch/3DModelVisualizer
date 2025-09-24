@@ -7,6 +7,7 @@
 #include <memory>
 #include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 class SceneManager {
 private:
@@ -50,7 +51,7 @@ public:
 
     // Metodi di aggiornamento oggetti
     void updateObjectPosition(unsigned int id, const glm::vec3& position);
-    void updateObjectRotation(unsigned int id, const glm::vec3& rotation);
+    void updateObjectRotation(unsigned int id, const glm::quat& rotation);
     void updateObjectScale(unsigned int id, const glm::vec3& scale);
 
     // Verifica se una posizione è occupata

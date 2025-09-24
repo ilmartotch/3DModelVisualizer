@@ -22,6 +22,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(glm CONFIG REQUIRED)
+find_package(imguizmo CONFIG REQUIRED)
 
 target_include_directories(App PRIVATE ${Stb_INCLUDE_DIR})
 
@@ -33,6 +34,7 @@ target_link_libraries(App PRIVATE
   imgui::imgui
   OpenGL::GL
   glm::glm
+  imguizmo::imguizmo
 )
 
 set(SHADERS_DIR ${CMAKE_SOURCE_DIR}/Shaders)

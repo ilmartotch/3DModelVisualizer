@@ -175,9 +175,11 @@ void SceneManager::updateObjectPosition(unsigned int id, const glm::vec3& positi
     if (obj) obj->setPosition(position);
 }
 
-void SceneManager::updateObjectRotation(unsigned int id, const glm::vec3& rotation) {
+void SceneManager::updateObjectRotation(unsigned int id, const glm::quat& rotation) {
     auto obj = getObjectById(id);
-    if (obj) obj->setRotation(rotation);
+    if (obj) {
+        obj->setRotation(rotation);
+    }
 }
 
 void SceneManager::updateObjectScale(unsigned int id, const glm::vec3& scale) {

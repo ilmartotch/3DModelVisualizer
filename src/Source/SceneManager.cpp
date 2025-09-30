@@ -1,4 +1,3 @@
-// Source/SceneManager.cpp
 #include "../Include/SceneManager.h"
 #include <iostream>
 
@@ -11,7 +10,7 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
 
     auto obj = std::make_shared<SceneObject>(nextId++, model, modelName + "_" + std::to_string(nextId - 1));
     obj->setPosition(pos);
-    obj->setInitialPosition(pos); // Salva la posizione iniziale
+    obj->setInitialPosition(pos);
     objects.push_back(obj);
     return obj;
 }
@@ -74,11 +73,11 @@ void SceneManager::renderForPicking(GLuint pickingShader, const glm::mat4& view,
 void SceneManager::renderObject(std::shared_ptr<SceneObject> obj, GLuint shader,
     const glm::mat4& view, const glm::mat4& projection,
     Model::RenderMode renderMode) {
-    if (!obj->getModel()) return;
+    if (!obj || !obj->getModel()) return;
+	glm::mat4 modelMatrix = obj->getModelMatrix();
 
     glUseProgram(shader);
 
-    glm::mat4 modelMatrix = obj->getModelMatrix();
     SetUniformMat4(shader, "model", modelMatrix);
     SetUniformMat4(shader, "view", view);
     SetUniformMat4(shader, "projection", projection);

@@ -129,6 +129,13 @@ public:
     // Metodo per verificare se il modello supporta il rendering istanziato
     virtual bool supportsInstancing() const { return true; }
 
+    RenderMode renderMode = RenderMode::SOLID;
+    glm::vec3 color = glm::vec3(0.8f, 0.8f, 0.8f); // Colore di default grigio chiaro
+    GLuint textureID = 0; // ID della texture (0 significa nessuna texture)
+    bool useTexture = false;
+    void setColor(const glm::vec3& newColor) { color = newColor; }
+    void setTexture(GLuint texID) { textureID = texID; useTexture = texID != 0; }
+
 protected:
     GLuint m_vao;
     GLuint m_vbo;

@@ -20,6 +20,10 @@ private:
 
     bool m_selected = false;
     glm::vec3 m_initialPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+    glm::vec3 objectColor = glm::vec3(0.8f, 0.8f, 0.8f); // Grigio default
+    GLuint objectTextureID = 0;
+    bool useObjectTexture = false;
+    Model::RenderMode objectRenderMode = Model::RenderMode::SOLID;
 
 public:
     SceneObject(unsigned int id, std::shared_ptr<Model> model, const std::string& name)

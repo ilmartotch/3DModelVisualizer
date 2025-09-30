@@ -807,7 +807,7 @@ int main() {
             ImVec2 displaySize = ImGui::GetIO().DisplaySize;
             
             // Imposta una dimensione minima garantita per il pannello
-            ImVec2 minSize = ImVec2(350, 400);
+            ImVec2 minSize = ImVec2(400, 550);
             ImGui::SetNextWindowSizeConstraints(minSize, ImVec2(FLT_MAX, FLT_MAX));
             
             ImGui::SetNextWindowPos(ImVec2(displaySize.x - selectedPanelSize.x - 10, 50), ImGuiCond_FirstUseEver);
@@ -1030,26 +1030,21 @@ int main() {
                                 strncpy(nameBuffer, selectedObj->getName().c_str(), sizeof(nameBuffer) - 1);
                                 nameBuffer[sizeof(nameBuffer) - 1] = '\0'; // Assicura terminazione
                             }
-                        } else {
+                        }
+                        else {
                             // Mostra campo di input per modificare il nome
-                            ImGui::Text("Name: ");
-                            ImGui::SameLine();
-                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 50);
-                            if (ImGui::InputText("##edit_name", nameBuffer, sizeof(nameBuffer), 
-                                                ImGuiInputTextFlags_EnterReturnsTrue)) {
-                                sceneManager.renameObject(selectedObj->getId(), nameBuffer);
-                                isEditingName = false;
-                            }
+                            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 60);
+                            ImGui::InputText("##name_edit", nameBuffer, sizeof(nameBuffer));
                             ImGui::PopItemWidth();
-        
+
                             ImGui::SameLine();
-                            if (ImGui::Button("Ok")) {
+                            if (ImGui::Button("Apply") || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
                                 sceneManager.renameObject(selectedObj->getId(), nameBuffer);
                                 isEditingName = false;
                             }
-        
-                            // Gestisci la perdita di focus
-                            if (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0) && !ImGui::IsItemHovered()) {
+
+                            ImGui::SameLine();
+                            if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                                 isEditingName = false;
                             }
                         }
@@ -1266,7 +1261,7 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
             glm::value_ptr(scale)
         );
     
-        // Calcola il delta di rotazione e applicalo ai nostri angoli di visualizzazione
+        // Calcola il delta di rotazione e applicalo agli nostri angoli di visualizzazione
         glm::vec3 deltaRotation = euler - glm::degrees(glm::eulerAngles(selectedObj->getRotation()));
         displayedEulerAngles += deltaRotation;
     

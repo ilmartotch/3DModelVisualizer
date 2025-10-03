@@ -1,13 +1,15 @@
 #pragma once
 
-#include "SceneObject.h"
-#include "ModelManager.h"
-#include "Shaders.h" // Per SetUniformMat4
+#include "../src/Include/SceneObject.h"
+#include "../src/Include/ModelManager.h"
+#include "../src/Include/Shaders.h"
 #include <vector>
 #include <memory>
 #include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+class ModelManager;
 
 class SceneManager {
 private:

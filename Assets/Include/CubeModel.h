@@ -12,4 +12,5 @@ public:
 
 protected:
 	virtual void setupVertexAttributes() override;
+	std::shared_ptr<Model> clone() const;
 };

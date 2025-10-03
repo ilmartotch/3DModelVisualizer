@@ -1,4 +1,5 @@
 #include "../Include/SceneManager.h"
+#include "../src/Include/ModelManager.h"
 #include <iostream>
 
 std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelName, const glm::vec3& pos) {

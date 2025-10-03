@@ -27,6 +27,7 @@
 #include "Include/Grid.h"
 #include "Include/ModelManager.h"
 #include "Include/SceneManager.h"
+#include "../Include/ModelLoader.h"
 
 // Aggiungi variabili globali per ImGuizmo
 static ImGuizmo::OPERATION currentGizmoOperation = ImGuizmo::UNIVERSAL;
@@ -54,6 +55,8 @@ bool isPositionOccupied(const glm::vec3& position, float radius, const SceneMana
 glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& sceneManager);
 void processKeyboardShortcuts(GLFWwindow* window);
 void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection); // Nuova funzione
+void openModelFile();
+void openTextureFile();
 
 // Variabili window
 int windoWidth = 800;
@@ -68,6 +71,7 @@ bool showSelectedModelPanel = false;
 float fps = 0.0f;
 float frameTimeAccumulator = 0.0f;
 int frameCount = 0;
+float timeValue = static_cast<float>(glfwGetTime());
 
 // Oggetti e controlli
 bool objectMoving = false;
@@ -77,6 +81,10 @@ bool objectSelected = false;
 unsigned int objectToDeleteId = 0;
 bool showDeleteConfirmation = false;
 static glm::vec3 displayedEulerAngles(0.0f);
+
+// Caricamento file
+bool showLoadModelDialog = false;
+bool showLoadTextureDialog = false;
 
 std::vector<unsigned int> multiSelectedObjectIds;
 bool multiSelectionMode = false;
@@ -140,6 +148,8 @@ glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& 
         yOffset = 0.5f;
     } else if (modelName == "Pyramid") {
         yOffset = 0.0f;
+    } else {      
+        yOffset = 1.0f;
     }
     
     return manager.findValidSpawnPosition(mouseControl.camPos, cameraTarget, yOffset, 1.0f);
@@ -425,18 +435,46 @@ void initializePickingSystem() {
     }
 }
 
-// Implementazione delle nuove funzioni per il SceneManager
+// Implementazione corretta della funzione renderScene
 void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection) {
+    // Configurazione uniforme degli shader
+    glUseProgram(shader);
+    SetUniformMat4(shader, "view", view);
+    SetUniformMat4(shader, "projection", projection);
+    SetUniformInt(shader, "textureSampler", 0);  // Texture sempre nello slot 0
+    
+    // Imposta il tempo per animazioni
+    SetUniformFloat(shader, "time", timeValue);
+    
     // Renderizza tutti gli oggetti nella scena
-    sceneManager.renderAll(shader, view, projection,
-        static_cast<Model::RenderMode>(currentRenderMode));
+    for (const auto& obj : sceneManager.getObjects()) {
+        // Imposta la matrice del modello
+        glm::mat4 modelMatrix = obj->getModelMatrix();
+        SetUniformMat4(shader, "model", modelMatrix);
+        
+        obj->getModel()->render();
+    }
 }
 
 void renderSceneControlPanel() {
     if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
 
         // Pannello per aggiungere oggetti
-        ImGui::Text("Add New Object:");
+        ImGui::Text("Add Objects:");
+        
+        // Aggiungi pulsanti per caricare modelli esterni
+        if (ImGui::Button("Load 3D Model", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+            openModelFile();
+        }
+        
+        if (ImGui::Button("Load Texture", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+            openTextureFile();
+        }
+        
+        ImGui::Separator();
+        
+        // Codice esistente per aggiungere modelli predefiniti
+        ImGui::Text("Add Built-in Object:");
         std::vector<std::string> modelNames = modelManager.getModelNames();
 
         static int selectedModelIndex = 0;
@@ -456,17 +494,24 @@ void renderSceneControlPanel() {
                 selectedModelIndex < modelNames.size()) {
                 
                 const std::string& modelName = modelNames[selectedModelIndex];
+                std::cout << "Tentativo di aggiunta modello: " << modelName << std::endl;
+                
                 glm::vec3 spawnPos = calculateSpawnPosition(modelName, mouseControl.cameraTarget, sceneManager);
+                
+                std::cout << "Posizione calcolata: (" << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")" << std::endl;
 
                 auto newObj = sceneManager.addObject(modelName, spawnPos);
                 if (newObj) {
+                    std::cout << "Oggetto creato con successo, ID: " << newObj->getId() << std::endl;
                     sceneManager.selectObject(newObj->getId());
                     objectSelected = true;
                     showSelectedModelPanel = true;
+                } else {
+                    std::cerr << "ERRORE: Creazione oggetto fallita!" << std::endl;
                 }
             }
         }
-
+        
         ImGui::Separator();
 
         // Variabili per gestire la rinomina
@@ -606,6 +651,22 @@ void processKeyboardShortcuts(GLFWwindow* window) {
             keyPressedU = false;
         }
     }
+}
+
+void openModelFile() {
+    
+    // Posiziona l'oggetto direttamente davanti alla telecamera
+    glm::vec3 viewDir = glm::normalize(mouseControl.cameraTarget - mouseControl.camPos);
+    glm::vec3 spawnPos = mouseControl.camPos + viewDir * 3.0f;
+    spawnPos.y = 0.5f; // Assicura che sia visibile
+    
+    ModelLoader::openModelFile(modelManager, sceneManager,
+        mouseControl.camPos, spawnPos, // Usa la posizione calcolata, non cameraTarget
+        objectSelected, showSelectedModelPanel);
+}
+
+void openTextureFile() {
+    ModelLoader::openTextureFile(modelManager, sceneManager);
 }
 
 int main() {
@@ -1080,6 +1141,36 @@ int main() {
                 if (ImGui::IsWindowHovered() && ImGui::IsMouseDragging(0)) {
                     selectedPanelSize = ImGui::GetWindowSize();
                 }
+
+                // Aggiungi nella sezione del pannello Selected Object
+                if (selectedObj) {
+                    // Dopo le sezioni esistenti (posizione, rotazione, scala)
+                    ImGui::Separator();
+                    ImGui::Text("Texture & Colors:");
+
+                    // Semplice menu a discesa per il tipo di visualizzazione
+                    static int currentTextureType = 0; 
+                    const char* textureTypes[] = { "Default Gray", "Red", "Green", "Blue" };
+                    
+                    if (ImGui::Combo("Object Color", &currentTextureType, textureTypes, IM_ARRAYSIZE(textureTypes))) {
+                        // Applica il colore selezionato
+                        glm::vec4 color;
+                        switch (currentTextureType) {
+                            case 1: color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); break; // Rosso
+                            case 2: color = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f); break; // Verde
+                            case 3: color = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f); break; // Blu
+                            default: color = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f); break; // Grigio di default
+                        }
+                        
+                        // Imposta la texture come colore solido
+                        selectedObj->getModel()->setTexture(TextureManager::getInstance().createColorTexture(color));
+                    }
+                    
+                    // Pulsante per caricare textures
+                    if (ImGui::Button("Load Texture...", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                        openTextureFile();
+                    }
+                }
                 
                 ImGui::End();
             }
@@ -1273,4 +1364,5 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
         sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
         sceneManager.updateObjectScale(selectedObj->getId(), scale);
     }
-}
+
+};

@@ -23,7 +23,11 @@ add_executable(App
  "src/Include/ModelManager.h" "src/Source/ModelManager.cpp" 
  "src/Include/InstancedModelManager.h" "src/Source/InstancedModelManager.cpp" 
  "src/Source/PickingBuffer.cpp" "src/Include/SceneObject.h" 
- "src/Include/SceneManager.h" "src/Source/SceneManager.cpp")
+ "src/Include/SceneManager.h" "src/Source/SceneManager.cpp"
+ "src/Include/ModelLoader.h" "src/Source/ModelLoader.cpp"
+ "src/Source/stb_image_impl.cpp"
+ "src/Include/TextureManager.h" "src/Source/TextureManager.cpp"
+)
 
 # Trova pacchetti con vcpkg
 find_package(glfw3 CONFIG REQUIRED)
@@ -33,6 +37,7 @@ find_package(Stb REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
+find_package(assimp REQUIRED)
 
 target_include_directories(App PRIVATE ${Stb_INCLUDE_DIR})
 
@@ -45,6 +50,7 @@ target_link_libraries(App PRIVATE
   OpenGL::GL
   glm::glm
   imguizmo::imguizmo
+  assimp::assimp
 )
 
 set(SHADERS_DIR ${CMAKE_SOURCE_DIR}/Shaders)

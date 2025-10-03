@@ -1,5 +1,6 @@
 #include "../Include/CubeModel.h"
 #include <glad/glad.h>
+#include <memory>
 
 CubeModel::CubeModel(const std::string& name) : Model(name) {
 	m_initialized = false;
@@ -12,52 +13,49 @@ CubeModel::~CubeModel() {
 void CubeModel::initialize() {
     if (m_initialized) return;
 
-    // Definizione dei vertici del cubo con colori
+    
     m_vertices = {
-        // Posizioni                Colori
-        // Faccia frontale (z positivo)
-        -0.5f, -0.5f,  0.5f,        1.0f, 0.0f, 0.0f,  // 0: in basso a sinistra
-         0.5f, -0.5f,  0.5f,        0.0f, 1.0f, 0.0f,  // 1: in basso a destra
-         0.5f,  0.5f,  0.5f,        0.0f, 0.0f, 1.0f,  // 2: in alto a destra
-        -0.5f,  0.5f,  0.5f,        1.0f, 1.0f, 0.0f,  // 3: in alto a sinistra
-
-        // Faccia posteriore (z negativo)
-        -0.5f, -0.5f, -0.5f,        0.0f, 1.0f, 1.0f,  // 4: in basso a sinistra
-         0.5f, -0.5f, -0.5f,        1.0f, 0.0f, 1.0f,  // 5: in basso a destra
-         0.5f,  0.5f, -0.5f,        0.5f, 0.5f, 0.0f,  // 6: in alto a destra
-        -0.5f,  0.5f, -0.5f,        0.0f, 0.5f, 0.5f,  // 7: in alto a sinistra
-    };
-
-    // Indici per disegnare le facce del cubo
-    m_indices = {
+        // Posizione           // Normale
         // Faccia frontale
-        0, 1, 2,
-        2, 3, 0,
-
-        // Faccia destra
-        1, 5, 6,
-        6, 2, 1,
-
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f, // 0
+         0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f, // 1
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f, // 2
+        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f, // 3
         // Faccia posteriore
-        5, 4, 7,
-        7, 6, 5,
-
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f, // 4
+         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f, // 5
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f, // 6
+        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f, // 7
         // Faccia sinistra
-        4, 0, 3,
-        3, 7, 4,
-
-        // Faccia superiore
-        3, 2, 6,
-        6, 7, 3,
-
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f, // 8
+        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f, // 9
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f, // 10
+        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f, // 11
+        // Faccia destra
+         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f, // 12
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f, // 13
+         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f, // 14
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f, // 15
         // Faccia inferiore
-        4, 5, 1,
-        1, 0, 4
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f, // 16
+         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f, // 17
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f, // 18
+        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f, // 19
+        // Faccia superiore
+        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f, // 20
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f, // 21
+         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f, // 22
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f  // 23
     };
 
-	//metodo helper della classe base per la configurazione dei buffer
-	setupBuffers();
-	m_initialized = true;
+    m_indices = {
+        0, 1, 2,   2, 3, 0,       // Front
+        4, 5, 6,   6, 7, 4,       // Back
+        8, 9, 10,  10, 11, 8,     // Left
+        12, 13, 14, 14, 15, 12,   // Right
+        16, 17, 18, 18, 19, 16,   // Bottom
+        20, 21, 22, 22, 23, 20    // Top
+    };
 
     // Creazione dei buffer OpenGL
     glGenVertexArrays(1, &m_vao);
@@ -72,26 +70,19 @@ void CubeModel::initialize() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(unsigned int), m_indices.data(), GL_STATIC_DRAW);
 
-    // Posizioni
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // Colori
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
+    setupVertexAttributes();
 
     glBindVertexArray(0);
-
     m_initialized = true;
 }
 
 void CubeModel::setupVertexAttributes() {
+    GLsizei stride = 6 * sizeof(float);
     // Posizioni (location 0)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
     glEnableVertexAttribArray(0);
-
-    // Colori (location 1)
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    // Normali (location 1)
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 }
 
@@ -99,42 +90,24 @@ void CubeModel::render() {
     if (!m_initialized) return;
 
     glBindVertexArray(m_vao);
-
-    switch (m_renderMode) {
-    case RenderMode::SOLID:
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
-		break;
-
-	case RenderMode::WIREFRAME:
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
-		break;
-
-    case RenderMode::SOLID_WITH_WIREFRAME:
-		glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-		glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
-		
-        // Poi renderizza il wireframe
-        glEnable(GL_POLYGON_OFFSET_FILL);
-        glPolygonOffset(-1.0f, -1.0f);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glLineWidth(1.5f);
-        glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
-        glLineWidth(1.0f);
-        glDisable(GL_POLYGON_OFFSET_FILL);
-        break;
-    }
-
-	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); // Reset to default mode
-	glBindVertexArray(0);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
 }
 
 void CubeModel::cleanup() {
     if (!m_initialized) return;
 
-    // Usa il metodo helper della classe base per pulire i buffer
-    cleanupBuffers();
+    glDeleteVertexArrays(1, &m_vao);
+    glDeleteBuffers(1, &m_vbo);
+    glDeleteBuffers(1, &m_ebo);
+    m_ebo = 0;
 
     m_initialized = false;
+}
+
+std::shared_ptr<Model> CubeModel::clone() const {
+    auto newModel = std::make_shared<CubeModel>(*this);
+    newModel->m_initialized = false; 
+    newModel->initialize();
+    return newModel;
 }

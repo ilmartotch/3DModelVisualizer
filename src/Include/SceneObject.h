@@ -12,6 +12,7 @@ private:
     unsigned int m_id;
     std::shared_ptr<Model> m_model;
     std::string m_name;
+    std::string m_modelName;
 
     // Trasformazioni
     glm::vec3 m_position = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -58,4 +59,6 @@ public:
     void setName(const std::string& newName) { m_name = newName; }
 
     std::string getModelType() const { return m_model ? m_model->getName() : ""; }
+
+    const std::string& getModelName() const { return m_modelName; }
 };

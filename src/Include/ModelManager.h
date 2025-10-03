@@ -1,9 +1,11 @@
 #pragma once
 #include "Model.h"
+#include "../src/Include/ModelLoader.h" 
 #include <memory>
 #include <vector>
 #include <string>
 #include <map>
+#include <filesystem>
 
 class ModelManager {
 public:
@@ -40,6 +42,22 @@ public:
 		auto it = m_models.find(name);
 		return (it != m_models.end()) ? it->second : nullptr;
 	}
+
+	// Metodo per caricare un modello da file
+	std::shared_ptr<Model> loadModelFromFile(const std::string& filePath);
+
+	// Metodo per caricare un'immagine 2D come texture
+	unsigned int loadTextureFromFile(const std::string& filePath);
+
+	// Controlla se un modello con il nome specificato esiste già
+	bool modelExists(const std::string& name);
+
+	// Genera un nome univoco per un modello
+	std::string generateUniqueName(const std::string& baseName);
+
+	// Ritorna i tipi di file supportati
+	std::vector<std::string> getSupportedModelFormats();
+	std::vector<std::string> getSupportedImageFormats();
 
 private:
 	std::map<std::string, std::shared_ptr<Model>> m_models;

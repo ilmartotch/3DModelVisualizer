@@ -3,6 +3,8 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include <memory>
+#include "../Include/TextureManager.h"
 
 //classe per tutti i modelli 3D
 class Model {
@@ -28,6 +30,12 @@ public:
 
     void setRenderMode(RenderMode mode) { m_renderMode = mode; }
     RenderMode getRenderMode() const { return m_renderMode; }
+
+    enum class TextureType {
+        NONE,          // Nessuna texture, usa colore default
+        IMAGE,         // Texture da file immagine
+        SOLID_COLOR    // Colore uniforme
+    };
 
     //metodo per rendering istanziato 
     virtual void renderInstanced(int instanceCount) {
@@ -131,10 +139,19 @@ public:
 
     RenderMode renderMode = RenderMode::SOLID;
     glm::vec3 color = glm::vec3(0.8f, 0.8f, 0.8f); // Colore di default grigio chiaro
-    GLuint textureID = 0; // ID della texture (0 significa nessuna texture)
-    bool useTexture = false;
+
+    // Gestione texture
+    void setTexture(GLuint texID) { textureID = texID; useTexture = true; }
+    virtual void setName(const std::string& name) { m_name = name; }
+    void clearTexture() { textureID = 0; useTexture = false; }
+    GLuint getTextureID() const { return textureID; }
+    bool hasTexture() const { return useTexture && textureID != 0; }
+
+    // Gestione tipo di texture
+    void setTextureType(TextureType type) { textureType = type; }
+    TextureType getTextureType() const { return textureType; }
+
     void setColor(const glm::vec3& newColor) { color = newColor; }
-    void setTexture(GLuint texID) { textureID = texID; useTexture = texID != 0; }
 
 protected:
     GLuint m_vao;
@@ -150,32 +167,7 @@ protected:
     RenderMode m_renderMode = RenderMode::SOLID;
 
     // Metodo helper per configurare i buffer base del modello
-    virtual void setupBuffers() {
-        if (m_vertices.empty()) return;
-
-        glGenVertexArrays(1, &m_vao);
-        glGenBuffers(1, &m_vbo);
-
-        glBindVertexArray(m_vao);
-
-        // Buffer dei vertici
-        glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
-        glBufferData(GL_ARRAY_BUFFER, m_vertices.size() * sizeof(float),
-            m_vertices.data(), GL_STATIC_DRAW);
-
-        // Se abbiamo indici, crea anche l'EBO
-        if (!m_indices.empty()) {
-            glGenBuffers(1, &m_ebo);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(unsigned int),
-                m_indices.data(), GL_STATIC_DRAW);
-        }
-
-        // Configura gli attributi dei vertici di base (position, normal, texcoord, etc.)
-        setupVertexAttributes();
-
-        glBindVertexArray(0);
-    }
+	virtual void setupBuffers();
 
     // Metodo helper per pulire i buffer
     virtual void cleanupBuffers() {
@@ -194,4 +186,11 @@ protected:
             m_vao = 0;
         }
     }
+
+    GLuint textureID = 0;
+    bool useTexture = false;
+    TextureType textureType = TextureType::NONE;
+    static GLuint defaultTextureID;
+    static void initializeDefaultTexture();
+	GLsizei m_indexCount = 0;
 };

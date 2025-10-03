@@ -23,3 +23,15 @@ inline void SetUniformFloat(GLuint shader, const char* name, float value) {
         glUniform1f(location, value);
     }
 }
+
+inline void SetUniformBool(GLuint shader, const char* name, bool value) {
+    GLint location = glGetUniformLocation(shader, name);
+    glUniform1i(location, static_cast<int>(value));
+}
+
+inline void SetUniformInt(GLuint shader, const char* name, int value) {
+    GLint location = glGetUniformLocation(shader, name);
+    if (location != -1) {
+        glUniform1i(location, value);
+    }
+}

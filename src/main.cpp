@@ -28,6 +28,7 @@
 #include "Include/ModelManager.h"
 #include "Include/SceneManager.h"
 #include "../Include/ModelLoader.h"
+#include "Include/TextureManager.h"
 
 // Aggiungi variabili globali per ImGuizmo
 static ImGuizmo::OPERATION currentGizmoOperation = ImGuizmo::UNIVERSAL;
@@ -442,6 +443,7 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     SetUniformMat4(shader, "view", view);
     SetUniformMat4(shader, "projection", projection);
     SetUniformInt(shader, "textureSampler", 0);  // Texture sempre nello slot 0
+    SetUniformVec3(shader, "viewPos", mouseControl.camPos);
     
     // Imposta il tempo per animazioni
     SetUniformFloat(shader, "time", timeValue);
@@ -452,6 +454,14 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
         glm::mat4 modelMatrix = obj->getModelMatrix();
         SetUniformMat4(shader, "model", modelMatrix);
         
+        // Imposta le uniform per il colore di override
+        if (obj->hasOverrideColor()) {
+            SetUniformInt(shader, "useOverrideColor", 1);
+            SetUniformVec4(shader, "overrideColor", obj->getOverrideColor());
+        } else {
+            SetUniformInt(shader, "useOverrideColor", 0);
+        }
+
         obj->getModel()->render();
     }
 }
@@ -1148,22 +1158,34 @@ int main() {
                     ImGui::Separator();
                     ImGui::Text("Texture & Colors:");
 
-                    // Semplice menu a discesa per il tipo di visualizzazione
-                    static int currentTextureType = 0; 
-                    const char* textureTypes[] = { "Default Gray", "Red", "Green", "Blue" };
-                    
-                    if (ImGui::Combo("Object Color", &currentTextureType, textureTypes, IM_ARRAYSIZE(textureTypes))) {
-                        // Applica il colore selezionato
-                        glm::vec4 color;
-                        switch (currentTextureType) {
-                            case 1: color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f); break; // Rosso
-                            case 2: color = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f); break; // Verde
-                            case 3: color = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f); break; // Blu
-                            default: color = glm::vec4(0.8f, 0.8f, 0.8f, 1.0f); break; // Grigio di default
-                        }
-                        
-                        // Imposta la texture come colore solido
-                        selectedObj->getModel()->setTexture(TextureManager::getInstance().createColorTexture(color));
+                    // Color picker completo
+                    static glm::vec4 color = selectedObj->hasOverrideColor() ? selectedObj->getOverrideColor() : glm::vec4(1.0f);
+                    if (ImGui::ColorEdit4("Object Color", &color.x)) {
+                        selectedObj->setOverrideColor(color);
+                    }
+
+                    // Pulsanti per colori predefiniti
+                    ImGui::Text("Preset Colors:");
+                    ImGui::SameLine();
+                    if (ImGui::ColorButton("Red", ImVec4(1.0f, 0.0f, 0.0f, 1.0f))) {
+                        selectedObj->setOverrideColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::ColorButton("Green", ImVec4(0.0f, 1.0f, 0.0f, 1.0f))) {
+                        selectedObj->setOverrideColor(glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::ColorButton("Blue", ImVec4(0.0f, 0.0f, 1.0f, 1.0f))) {
+                        selectedObj->setOverrideColor(glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::ColorButton("White", ImVec4(1.0f, 1.0f, 1.0f, 1.0f))) {
+                        selectedObj->setOverrideColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    }
+
+                    // Pulsante per ripristinare la texture/colore originale
+                    if (ImGui::Button("Reset to Default", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                        selectedObj->clearOverrideColor();
                     }
                     
                     // Pulsante per caricare textures

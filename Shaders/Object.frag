@@ -1,28 +1,53 @@
 #version 330 core
-in vec3 FragPos;
-in vec3 Normal;
-in vec2 TexCoord;
-// Rimuovi l'input VertexColor
 
 out vec4 FragColor;
 
-// Uniforms texture
+in vec2 v_texCoords;
+in vec3 v_normal;
+in vec3 v_fragPos;
+
 uniform sampler2D textureSampler;
-// Rimuovi uniform per arcobaleno
-// uniform bool useRainbow;
-// uniform float time;
-// uniform float rainbowSpeed;
+uniform vec3 viewPos;
+
+// Uniforms per il colore di override
+uniform bool useOverrideColor;
+uniform vec4 overrideColor;
 
 void main() {
-    // Usa semplicemente la texture (o il colore grigio di default)
-    vec4 color = texture(textureSampler, TexCoord);
+    // Se il colore di override è attivo, usalo e termina
+    if (useOverrideColor) {
+        FragColor = overrideColor;
+        return;
+    }
+
+    // Altrimenti, procedi con la logica di illuminazione e texture standard
+    vec3 lightPos = vec3(2.0, 5.0, 2.0);
+    vec3 lightColor = vec3(1.0, 1.0, 1.0);
     
-    // Illuminazione semplice
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    float diff = max(dot(normalize(Normal), lightDir), 0.0);
-    vec3 diffuse = diff * vec3(0.8);
-    vec3 ambient = vec3(0.2);
+    // Ambient
+    float ambientStrength = 0.2;
+    vec3 ambient = ambientStrength * lightColor;
     
-    // Risultato finale
-    FragColor = vec4((ambient + diffuse) * color.rgb, color.a);
+    // Diffuse
+    vec3 norm = normalize(v_normal);
+    vec3 lightDir = normalize(lightPos - v_fragPos);
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * lightColor;
+    
+    // Specular
+    float specularStrength = 0.5;
+    vec3 viewDir = normalize(viewPos - v_fragPos);
+    vec3 reflectDir = reflect(-lightDir, norm);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+    vec3 specular = specularStrength * spec * lightColor;
+    
+    vec4 texColor = texture(textureSampler, v_texCoords);
+    
+    // Evita che gli oggetti neri diventino invisibili
+    if (texColor.rgb == vec3(0.0, 0.0, 0.0)) {
+        texColor.rgb = vec3(0.05, 0.05, 0.05);
+    }
+
+    vec3 result = (ambient + diffuse + specular) * texColor.rgb;
+    FragColor = vec4(result, texColor.a);
 }

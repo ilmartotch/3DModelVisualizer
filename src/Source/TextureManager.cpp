@@ -1,121 +1,117 @@
-#include "../src/Include/TextureManager.h"
-#include <iostream>
+#include "TextureManager.h"
 #include <stb_image.h>
 
-GLuint TextureManager::loadTextureFromFile(const std::string& filepath) {
-    // Verifica se la texture è già caricata
-    auto it = textureCache.find(filepath);
-    if (it != textureCache.end()) {
-        return it->second;
+TextureManager::TextureManager() : m_defaultTexture(0) {
+    // Inizializza la texture di default al primo utilizzo
+    getDefaultTexture();
+}
+
+TextureManager::~TextureManager() {
+    cleanup();
+}
+
+GLuint TextureManager::loadTexture(const std::string& path) {
+    // Controlla se la texture è già in cache
+    if (m_textureMap.find(path) != m_textureMap.end()) {
+        return m_textureMap[path];
     }
-    
-    // Carica la texture con STB Image
-    int width, height, channels;
-    stbi_set_flip_vertically_on_load(true);
-    unsigned char* data = stbi_load(filepath.c_str(), &width, &height, &channels, 0);
-    
-    if (!data) {
-        std::cerr << "Failed to load texture: " << filepath << std::endl;
-        return 0;
+
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+
+    int width, height, nrComponents;
+    unsigned char* data = stbi_load(path.c_str(), &width, &height, &nrComponents, 0);
+    if (data) {
+        GLenum format;
+        if (nrComponents == 1)
+            format = GL_RED;
+        else if (nrComponents == 3)
+            format = GL_RGB;
+        else if (nrComponents == 4)
+            format = GL_RGBA;
+        else {
+            std::cerr << "Formato immagine non supportato: " << nrComponents << " componenti." << std::endl;
+            stbi_image_free(data);
+            return 0;
+        }
+
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        stbi_image_free(data);
+
+        // Aggiungi alla cache
+        m_textureMap[path] = textureID;
     }
-    
-    // Determina il formato in base ai canali
-    GLenum format;
-    if (channels == 1) format = GL_RED;
-    else if (channels == 3) format = GL_RGB;
-    else if (channels == 4) format = GL_RGBA;
     else {
-        std::cerr << "Unsupported number of channels: " << channels << std::endl;
+        std::cerr << "Errore nel caricamento della texture: " << path << std::endl;
         stbi_image_free(data);
         return 0;
     }
-    
-    // Genera la texture OpenGL
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    
-    // Imposta parametri della texture
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    
-    // Carica l'immagine nella texture
-    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    
-    stbi_image_free(data);
-    
-    // Salva nella cache e restituisci
-    textureCache[filepath] = textureID;
+
     return textureID;
 }
 
 GLuint TextureManager::createColorTexture(const glm::vec4& color) {
-    // Genera un hash semplice del colore
-    GLuint colorHash = 
-        static_cast<GLuint>(color.r * 255) << 24 | 
-        static_cast<GLuint>(color.g * 255) << 16 | 
-        static_cast<GLuint>(color.b * 255) << 8 | 
-        static_cast<GLuint>(color.a * 255);
-        
-    // Verifica se esiste già
-    auto it = colorTextureCache.find(colorHash);
-    if (it != colorTextureCache.end()) {
-        return it->second;
+    // Controlla se una texture per questo colore esiste già
+    if (m_colorTextureMap.find(color) != m_colorTextureMap.end()) {
+        return m_colorTextureMap[color];
     }
-    
-    // Crea una texture 1x1 con il colore specificato
+
     GLuint textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
-    
-    // Un singolo pixel del colore desiderato
-    unsigned char pixelData[4] = {
-        static_cast<unsigned char>(color.r * 255),
-        static_cast<unsigned char>(color.g * 255),
-        static_cast<unsigned char>(color.b * 255),
-        static_cast<unsigned char>(color.a * 255)
+
+    // Crea una texture 1x1 con il colore specificato
+    unsigned char data[] = {
+        (unsigned char)(color.r * 255.0f),
+        (unsigned char)(color.g * 255.0f),
+        (unsigned char)(color.b * 255.0f),
+        (unsigned char)(color.a * 255.0f)
     };
-    
-    // Carica il pixel come texture
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixelData);
-    
-    // Imposta i parametri della texture
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+
+    // Imposta i parametri per evitare il bisogno di mipmap
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    
-    // Salva nella cache e restituisci
-    colorTextureCache[colorHash] = textureID;
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Aggiungi alla cache
+    m_colorTextureMap[color] = textureID;
+
     return textureID;
 }
 
-GLuint TextureManager::getTexture(const std::string& id)
-{
-    return GLuint();
-}
-
-void TextureManager::setupRainbowEffect(GLuint shader, float time, float speed) {
-    // Imposta le uniform per l'effetto arcobaleno
-    glUseProgram(shader);
-    glUniform1f(glGetUniformLocation(shader, "time"), time);
-    glUniform1f(glGetUniformLocation(shader, "rainbowSpeed"), speed);
-    glUniform1i(glGetUniformLocation(shader, "useRainbow"), 1);
+GLuint TextureManager::getDefaultTexture() {
+    if (m_defaultTexture == 0) {
+        m_defaultTexture = createColorTexture(glm::vec4(0.8f, 0.8f, 0.8f, 1.0f));
+    }
+    return m_defaultTexture;
 }
 
 void TextureManager::cleanup() {
-    // Elimina tutte le texture nella cache
-    for (const auto& pair : textureCache) {
-        glDeleteTextures(1, &pair.second);
+    for (auto const& [path, id] : m_textureMap) {
+        glDeleteTextures(1, &id);
     }
-    
-    for (const auto& pair : colorTextureCache) {
-        glDeleteTextures(1, &pair.second);
+    m_textureMap.clear();
+
+    for (auto const& [color, id] : m_colorTextureMap) {
+        glDeleteTextures(1, &id);
     }
-    
-    textureCache.clear();
-    colorTextureCache.clear();
+    m_colorTextureMap.clear();
+
+    if (m_defaultTexture != 0) {
+        glDeleteTextures(1, &m_defaultTexture);
+        m_defaultTexture = 0;
+    }
 }

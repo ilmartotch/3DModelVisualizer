@@ -10,7 +10,8 @@ public:
 	virtual void render() override;
 	virtual void cleanup() override;
 
+	std::shared_ptr<Model> clone() const override;
+
 protected:
 	virtual void setupVertexAttributes() override;
-	std::shared_ptr<Model> clone() const;
 };

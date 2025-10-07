@@ -107,7 +107,6 @@ void CubeModel::cleanup() {
 
 std::shared_ptr<Model> CubeModel::clone() const {
     auto newModel = std::make_shared<CubeModel>(*this);
-    newModel->m_initialized = false; 
     newModel->initialize();
     return newModel;
 }

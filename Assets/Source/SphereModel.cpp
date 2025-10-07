@@ -154,3 +154,9 @@ void SphereModel::setupVertexAttributes() {
 	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
 	glEnableVertexAttribArray(1);
 }
+
+std::shared_ptr<Model> SphereModel::clone() const {
+    auto newModel = std::make_shared<SphereModel>(*this);
+    newModel->initialize();
+    return newModel;
+}

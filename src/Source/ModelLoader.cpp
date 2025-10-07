@@ -93,7 +93,7 @@ bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& scen
             GLuint textureID = loadTexture(filePath);
             if (textureID) {
                 // Ottieni il modello dell'oggetto selezionato e imposta la sua texture
-                std::shared_ptr<Model> model = modelManager.getModel(selectedObj->getModelName());
+                std::shared_ptr<Model> model = modelManager.getModel(selectedObj->getName());
                 if (model) {
                     model->setTexture(textureID);
                     model->getTextureID();
@@ -249,6 +249,11 @@ void ImportedModel::addMesh(const MeshData& mesh) {
 
 void ImportedModel::addTexture(const TextureData& texture) {
     textures.push_back(texture);
+}
+
+std::shared_ptr<Model> ImportedModel::clone() const {
+    auto newModel = std::make_shared<ImportedModel>(path);
+	return newModel;
 }
 
 std::shared_ptr<ImportedModel> ModelLoader::loadModel(const std::string& path) {

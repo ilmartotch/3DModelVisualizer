@@ -39,6 +39,7 @@ private:
     std::vector<MeshData> meshes;
     std::vector<TextureData> textures;
     std::string directory;
+	std::string path;
     
     GLuint VAO = 0;
     std::vector<GLuint> vbos;
@@ -65,10 +66,16 @@ public:
     void addTexture(const TextureData& texture);
     // Imposta la directory di base
     void setDirectory(const std::string& dir) { directory = dir; }
+	// Imposta il path del modello
+	void setPath(const std::string& modelPath) { path = modelPath; }
     
     // Getter per i dati del modello
     const std::vector<MeshData>& getMeshes() const { return meshes; }
     const std::vector<TextureData>& getTextures() const { return textures; }
+
+    std::shared_ptr<Model> clone() const override;
+
+	const std::string& getPath() const { return path; }
 };
 
 class ModelLoader {

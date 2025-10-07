@@ -99,7 +99,6 @@ void PyramidModel::setupVertexAttributes() {
 
 std::shared_ptr<Model> PyramidModel::clone() const {
     auto newModel = std::make_shared<PyramidModel>(*this);
-    newModel->m_initialized = false;
     newModel->initialize();
     return newModel;
 }

@@ -151,7 +151,9 @@ public:
     void setTextureType(TextureType type) { textureType = type; }
     TextureType getTextureType() const { return textureType; }
 
+    void setModel(std::shared_ptr<Model> model);
     void setColor(const glm::vec3& newColor) { color = newColor; }
+    virtual std::shared_ptr<Model> clone() const = 0;
 
 protected:
     GLuint m_vao;

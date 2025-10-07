@@ -284,7 +284,7 @@ std::shared_ptr<SceneObject> SceneManager::duplicateObject(unsigned int sourceId
     }
     
     // Ottieni il modello originale
-    std::string modelType = sourceObj->getModelType();
+    std::string modelType = sourceObj->getName();
     
     // Crea un nuovo oggetto dello stesso tipo
     auto newObj = addObject(modelType, newPosition);

@@ -10,6 +10,8 @@ public:
 	virtual void render() override;
 	virtual void cleanup() override;
 
+	std::shared_ptr<Model> clone() const override;
+
 private:
 	int m_sectors;
 	int m_stacks;

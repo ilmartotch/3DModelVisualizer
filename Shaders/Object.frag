@@ -2,12 +2,13 @@
 
 out vec4 FragColor;
 
-in vec2 v_texCoords;
-in vec3 v_normal;
-in vec3 v_fragPos;
+in vec3 FragPos;
+in vec3 Normal;
+in vec2 TexCoord;
 
 uniform sampler2D textureSampler;
 uniform vec3 viewPos;
+uniform float time;
 
 // Uniforms per il colore di override
 uniform bool useOverrideColor;
@@ -29,23 +30,23 @@ void main() {
     vec3 ambient = ambientStrength * lightColor;
     
     // Diffuse
-    vec3 norm = normalize(v_normal);
-    vec3 lightDir = normalize(lightPos - v_fragPos);
+    vec3 norm = normalize(Normal);
+    vec3 lightDir = normalize(lightPos - FragPos);
     float diff = max(dot(norm, lightDir), 0.0);
     vec3 diffuse = diff * lightColor;
     
     // Specular
     float specularStrength = 0.5;
-    vec3 viewDir = normalize(viewPos - v_fragPos);
+    vec3 viewDir = normalize(viewPos - FragPos);
     vec3 reflectDir = reflect(-lightDir, norm);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
     vec3 specular = specularStrength * spec * lightColor;
     
-    vec4 texColor = texture(textureSampler, v_texCoords);
+    vec4 texColor = texture(textureSampler, TexCoord);
     
     // Evita che gli oggetti neri diventino invisibili
-    if (texColor.rgb == vec3(0.0, 0.0, 0.0)) {
-        texColor.rgb = vec3(0.05, 0.05, 0.05);
+    if (length(texColor.rgb) < 0.1) {
+        texColor.rgb = vec3(0.2, 0.2, 0.2);
     }
 
     vec3 result = (ambient + diffuse + specular) * texColor.rgb;

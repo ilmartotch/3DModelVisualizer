@@ -462,7 +462,25 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
             SetUniformInt(shader, "useOverrideColor", 0);
         }
 
+        // Ottieni il modello
+        std::shared_ptr<Model> model = obj->getModel();
+        
+        // Assicurati che la texture corretta sia attiva
+        glActiveTexture(GL_TEXTURE0);
+        
+        // Se il modello ha una texture specifica, usala
+        if (model->hasTexture()) {
+            glBindTexture(GL_TEXTURE_2D, model->getTextureID());
+        } else {
+            // Altrimenti, usa la texture di default
+            glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
+        }
+
+        // Renderizza il modello
         obj->getModel()->render();
+        
+        // Scollega esplicitamente la texture per evitare interferenze
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
 }
 
@@ -664,14 +682,15 @@ void processKeyboardShortcuts(GLFWwindow* window) {
 }
 
 void openModelFile() {
-    
-    // Posiziona l'oggetto direttamente davanti alla telecamera
-    glm::vec3 viewDir = glm::normalize(mouseControl.cameraTarget - mouseControl.camPos);
-    glm::vec3 spawnPos = mouseControl.camPos + viewDir * 3.0f;
-    spawnPos.y = 0.5f; // Assicura che sia visibile
+    glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
+        mouseControl.camPos, 
+        mouseControl.cameraTarget, 
+        0.5f,
+        1.0f 
+    );
     
     ModelLoader::openModelFile(modelManager, sceneManager,
-        mouseControl.camPos, spawnPos, // Usa la posizione calcolata, non cameraTarget
+        mouseControl.camPos, spawnPos,
         objectSelected, showSelectedModelPanel);
 }
 

@@ -105,7 +105,7 @@ private:
     // Carica le texture associate al materiale
     static std::vector<TextureData> loadMaterialTextures(aiMaterial* mat, aiTextureType type, 
                                                 const std::string& typeName, const std::string& directory,
-                                                const aiScene* scene = nullptr);
+                                                const aiScene* scene, const std::string& modelPath);
 
     // Normalizza i vertici del modello per adattarlo a una dimensione standard
     static void normalizeModel(std::shared_ptr<ImportedModel> model);

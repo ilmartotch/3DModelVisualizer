@@ -425,25 +425,24 @@ void ModelLoader::processNode(aiNode* node, const aiScene* scene,
             aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
             std::cout << "Materiale trovato: " << material->GetName().C_Str() << std::endl;
             
-            // Carica le texture diffuse (colore base)
+            // Passa il path del modello
             std::vector<TextureData> diffuseMaps = loadMaterialTextures(
-                material, aiTextureType_DIFFUSE, "texture_diffuse", directory, scene);
+                material, aiTextureType_DIFFUSE, "texture_diffuse", directory, scene, model->getPath());
             
             std::cout << "Caricate " << diffuseMaps.size() << " texture diffuse" << std::endl;
             
             // Aggiungi le texture al modello
             for (const auto& texture : diffuseMaps) {
                 model->addTexture(texture);
-                // Se è la prima texture diffusa, imposta come texture principale del modello
                 if (texture.type == "texture_diffuse" && !model->hasTexture()) {
                     model->setTexture(texture.id);
                     std::cout << "Texture principale impostata: ID=" << texture.id << std::endl;
                 }
             }
             
-            // Carica le texture specular
+            // Passa il path del modello
             std::vector<TextureData> specularMaps = loadMaterialTextures(
-                material, aiTextureType_SPECULAR, "texture_specular", directory, scene);
+                material, aiTextureType_SPECULAR, "texture_specular", directory, scene, model->getPath());
             
             std::cout << "Caricate " << specularMaps.size() << " texture speculari" << std::endl;
             
@@ -540,7 +539,7 @@ MeshData ModelLoader::processMesh(aiMesh* mesh, const aiScene* scene) {
 
 std::vector<TextureData> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTextureType type, 
                                                        const std::string& typeName, const std::string& directory, 
-                                                       const aiScene* scene) {
+                                                       const aiScene* scene, const std::string& modelPath) {
     std::vector<TextureData> textures;
     
     std::cout << "Cercando texture di tipo " << typeName << " in " << directory << std::endl;
@@ -561,8 +560,9 @@ std::vector<TextureData> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTe
             int textureIndex = std::stoi(str.C_Str() + 1);
             std::cout << "  Rilevata texture embedded con indice: " << textureIndex << std::endl;
             
-            // Crea una chiave univoca per la cache
-            std::string uniqueKey = directory + "/embedded_" + std::to_string(textureIndex);
+            // Usa il path COMPLETO del modello per la chiave univoca
+            std::string uniqueKey = modelPath + "_embedded_" + std::to_string(textureIndex);
+            std::cout << "  Chiave cache texture: " << uniqueKey << std::endl;
             
             // Verifica se è già nella cache
             if (textureCache.find(uniqueKey) != textureCache.end()) {

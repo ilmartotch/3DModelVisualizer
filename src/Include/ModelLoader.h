@@ -17,6 +17,8 @@
 class ModelManager;
 class SceneManager;
 class SceneObject;
+class ImportedModel;
+class ImagePlaneModel;
 
 // Struttura per memorizzare i dati della mesh
 struct MeshData {
@@ -27,9 +29,15 @@ struct MeshData {
     std::string materialName;
 };
 
+struct Vertex {
+    glm::vec3 Position;
+    glm::vec3 Normal;
+    glm::vec2 TexCoords;
+};
+
 // Struttura per memorizzare i dati della texture
 struct TextureData {
-    unsigned int id=0;
+    unsigned int id = 0;
     std::string type;
     std::string path;
 };
@@ -76,37 +84,45 @@ public:
     std::shared_ptr<Model> clone() const override;
 
 	const std::string& getPath() const { return path; }
+
 };
 
 class ModelLoader {
-private:
-    static std::unordered_map<std::string, unsigned int> textureCache;
-
 public:
-    static bool openModelFile(ModelManager& modelManager, SceneManager& sceneManager, const glm::vec3& cameraPos, 
-                        const glm::vec3& cameraTarget, bool& objectSelected, bool& showSelectedModelPanel);
+    static bool openModelFile(ModelManager& modelManager, SceneManager& sceneManager,
+        const glm::vec3& cameraPos, const glm::vec3& cameraTarget,
+        bool& objectSelected, bool& showSelectedModelPanel);
 
-    static bool openTextureFile(ModelManager& modelManager, SceneManager& sceneManager);
-    
-    // Carica un modello 3D da file utilizzando Assimp
     static std::shared_ptr<ImportedModel> loadModel(const std::string& path);
-    
-    // Carica una texture utilizzando stb_image
     static unsigned int loadTexture(const std::string& path);
 
+    static std::shared_ptr<ImagePlaneModel> loadImageAsPlane(const std::string& path, std::string& errorMessage);
+
+    bool openImageFile(ModelManager& modelManager, SceneManager& sceneManager, const glm::vec3& cameraPos, 
+        const glm::vec3& cameraTarget, bool& objectSelected, 
+        bool& showSelectedModelPanel, std::string& errorMessage);
+
+    static bool openTextureFile(ModelManager& modelManager, SceneManager& sceneManager,
+        std::string& outTexturePath, GLuint& outTextureID,
+        bool& needsConfirmation);
+
+    static bool applyTextureToSelected(SceneManager& sceneManager, GLuint textureID);
+
 private:
-    // Processa un nodo del modello Assimp
     static void processNode(aiNode* node, const aiScene* scene, 
-                          std::shared_ptr<ImportedModel> model, const std::string& directory);
+                           std::shared_ptr<ImportedModel> model, const std::string& directory);
     
-    // Processa una mesh del modello Assimp
     static MeshData processMesh(aiMesh* mesh, const aiScene* scene);
     
-    // Carica le texture associate al materiale
     static std::vector<TextureData> loadMaterialTextures(aiMaterial* mat, aiTextureType type, 
-                                                const std::string& typeName, const std::string& directory,
-                                                const aiScene* scene, const std::string& modelPath);
-
-    // Normalizza i vertici del modello per adattarlo a una dimensione standard
+        const std::string& typeName, const std::string& directory, 
+        const aiScene* scene, const std::string& modelPath);
+    
     static void normalizeModel(std::shared_ptr<ImportedModel> model);
+
+    static std::unordered_map<std::string, unsigned int> textureCache;
+
+    static std::string openFileDialog(const wchar_t* filter);
+    
+    static bool replaceModelTexture(std::shared_ptr<Model> model, const std::string& texturePath);
 };

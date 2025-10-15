@@ -27,6 +27,7 @@ add_executable(App
  "src/Include/ModelLoader.h" "src/Source/ModelLoader.cpp"
  "src/Source/stb_image_impl.cpp"
  "src/Include/TextureManager.h" "src/Source/TextureManager.cpp"
+ "Assets/Include/ImagePlaneModel.h" "Assets/Source/ImagePlaneModel.cpp"
 )
 
 # Trova pacchetti con vcpkg

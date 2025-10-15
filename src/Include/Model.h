@@ -32,9 +32,21 @@ public:
     RenderMode getRenderMode() const { return m_renderMode; }
 
     enum class TextureType {
-        NONE,          // Nessuna texture, usa colore default
-        IMAGE,         // Texture da file immagine
-        SOLID_COLOR    // Colore uniforme
+        NONE,
+        IMAGE,
+        SOLID_COLOR
+    };
+
+    // AGGIUNTO: Enum per strategie di UV mapping
+    enum class UVMappingType {
+        NONE,           // Nessun UV mapping
+        PLANAR_XY,      // Proiezione planare sul piano XY
+        PLANAR_XZ,      // Proiezione planare sul piano XZ
+        PLANAR_YZ,      // Proiezione planare sul piano YZ
+        SPHERICAL,      // Mapping sferico
+        CYLINDRICAL,    // Mapping cilindrico
+        CUBIC,          // Mapping cubico (box mapping)
+        AUTO            // Determina automaticamente il migliore
     };
 
     //metodo per rendering istanziato 
@@ -155,6 +167,12 @@ public:
     void setColor(const glm::vec3& newColor) { color = newColor; }
     virtual std::shared_ptr<Model> clone() const = 0;
 
+    void setUVMappingType(UVMappingType type) { uvMappingType = type; }
+    UVMappingType getUVMappingType() const { return uvMappingType; }
+    
+    bool hasUVCoordinates() const { return hasUVs; }
+    void generateProceduralUVs(UVMappingType mappingType = UVMappingType::AUTO);
+
 protected:
     GLuint m_vao;
     GLuint m_vbo;
@@ -194,5 +212,13 @@ protected:
     TextureType textureType = TextureType::NONE;
     static GLuint defaultTextureID;
     static void initializeDefaultTexture();
-	GLsizei m_indexCount = 0;
+    GLsizei m_indexCount = 0;
+    
+    bool hasUVs = false;
+    UVMappingType uvMappingType = UVMappingType::NONE;
+    
+    glm::vec2 generatePlanarUV(const glm::vec3& position, UVMappingType plane);
+    glm::vec2 generateSphericalUV(const glm::vec3& position);
+    glm::vec2 generateCylindricalUV(const glm::vec3& position);
+    glm::vec2 generateCubicUV(const glm::vec3& position, const glm::vec3& normal);
 };

@@ -15,15 +15,9 @@ uniform bool useOverrideColor;
 uniform vec4 overrideColor;
 
 void main() {
-    // Se il colore di override è attivo, usalo e termina
-    if (useOverrideColor) {
-        FragColor = overrideColor;
-        return;
-    }
-
-    // Altrimenti, procedi con la logica di illuminazione e texture standard
+    
     vec3 lightPos = vec3(2.0, 5.0, 2.0);
-    vec3 lightColor = vec3(1.0, 1.0, 1.0);
+    vec3 lightColor = vec3(1.0, 1.0,1.0);
     
     // Ambient
     float ambientStrength = 0.2;
@@ -49,6 +43,15 @@ void main() {
         texColor.rgb = vec3(0.2, 0.2, 0.2);
     }
 
-    vec3 result = (ambient + diffuse + specular) * texColor.rgb;
-    FragColor = vec4(result, texColor.a);
+    vec3 litColor = (ambient + diffuse + specular) * texColor.rgb;
+
+    if(useOverrideColor) {
+        litColor *= overrideColor.rgb;
+
+        float alpha = texColor.a * overrideColor.a;
+        FragColor = vec4(litColor, alpha);
+    }
+    else {
+        FragColor = vec4(litColor, texColor.a);
+    }
 }

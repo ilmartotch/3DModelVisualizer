@@ -14,7 +14,8 @@ public:
                 const glm::vec3& scale = glm::vec3(1.0f))
         : m_id(id), m_model(model), m_name(name), m_position(position),
           m_rotation(rotation), m_scale(scale), m_selected(false),
-          m_initialPosition(position), useOverrideColor(false), overrideColor(1.0f) {
+          m_initialPosition(position), useOverrideColor(false), overrideColor(1.0f),
+          overrideTextureID(0), useOverrideTexture(false) {
         updateModelMatrix();
     }
 
@@ -35,7 +36,7 @@ public:
     void setRotation(const glm::quat& rotation) { m_rotation = rotation; updateModelMatrix(); }
     void setScale(const glm::vec3& scale) { m_scale = scale; updateModelMatrix(); }
     void setSelected(bool selected) { m_selected = selected; }
-	void serModel(std::shared_ptr<Model> model) { m_model = model; }
+    void setModel(std::shared_ptr<Model> model) { m_model = model; }  // CORRETTO IL TYPO
 
     // Metodi per il colore di override
     void setOverrideColor(const glm::vec4& color) {
@@ -53,6 +54,25 @@ public:
 
     glm::vec4 getOverrideColor() const {
         return overrideColor;
+    }
+
+    // AGGIUNGI: Metodi per la texture di override (stessa logica del colore)
+    void setOverrideTexture(GLuint texID) {
+        overrideTextureID = texID;
+        useOverrideTexture = true;
+    }
+
+    void clearOverrideTexture() {
+        overrideTextureID = 0;
+        useOverrideTexture = false;
+    }
+
+    bool hasOverrideTexture() const {
+        return useOverrideTexture;
+    }
+
+    GLuint getOverrideTextureID() const {
+        return overrideTextureID;
     }
 
     // Aggiorna la matrice del modello
@@ -83,4 +103,7 @@ private:
     // Proprietà per il colore di override
     bool useOverrideColor;
     glm::vec4 overrideColor;
+
+    GLuint overrideTextureID;
+    bool useOverrideTexture;
 };

@@ -57,7 +57,7 @@ glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& 
 void processKeyboardShortcuts(GLFWwindow* window);
 void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection); // Nuova funzione
 void openModelFile();
-void openTextureFile();
+void openImageFile();
 
 // Variabili window
 int windoWidth = 800;
@@ -67,6 +67,15 @@ static bool shoeHelpWindow = false;
 const int SIDEBAR_WIDTH = 300;
 bool showModelInfo = true;
 bool showSelectedModelPanel = false;
+
+struct TextureReplaceDialog {
+    bool show = false;
+    std::string texturePath = "";
+    GLuint newTextureID = 0;
+};
+
+static TextureReplaceDialog textureReplaceDialog;
+static bool dontAskTextureReplace = false;
 
 // FPS
 float fps = 0.0f;
@@ -87,6 +96,16 @@ static glm::vec3 displayedEulerAngles(0.0f);
 bool showLoadModelDialog = false;
 bool showLoadTextureDialog = false;
 
+// Gestione errori
+struct ErrorDialog
+{
+    bool show = false;
+    std::string title = "";
+	std::string message = "";
+	std::string details = "";
+};
+static ErrorDialog errorDialog;
+
 std::vector<unsigned int> multiSelectedObjectIds;
 bool multiSelectionMode = false;
 
@@ -95,7 +114,7 @@ PickingBuffer pickingBuffer;
 GLuint pickingShader = 0;
 bool pickingEnabled = true;
 
-// Tracciamento RenderMode
+ // Tracciamento RenderMode
 int currentRenderMode = static_cast<int>(Model::RenderMode::SOLID);
 
 // Input comandi
@@ -442,19 +461,18 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     glUseProgram(shader);
     SetUniformMat4(shader, "view", view);
     SetUniformMat4(shader, "projection", projection);
-    SetUniformInt(shader, "textureSampler", 0);  // Texture sempre nello slot 0
+    SetUniformInt(shader, "textureSampler", 0);
     SetUniformVec3(shader, "viewPos", mouseControl.camPos);
-    
-    // Imposta il tempo per animazioni
     SetUniformFloat(shader, "time", timeValue);
+    
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
     // Renderizza tutti gli oggetti nella scena
     for (const auto& obj : sceneManager.getObjects()) {
-        // Imposta la matrice del modello
         glm::mat4 modelMatrix = obj->getModelMatrix();
         SetUniformMat4(shader, "model", modelMatrix);
         
-        // Imposta le uniform per il colore di override
         if (obj->hasOverrideColor()) {
             SetUniformInt(shader, "useOverrideColor", 1);
             SetUniformVec4(shader, "overrideColor", obj->getOverrideColor());
@@ -468,16 +486,20 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
         // Assicurati che la texture corretta sia attiva
         glActiveTexture(GL_TEXTURE0);
         
-        // Se il modello ha una texture specifica, usala
-        if (model->hasTexture()) {
+        // MODIFICA: Priorità alla texture dell'oggetto, poi del modello
+        if (obj->hasOverrideTexture()) {
+            // Usa la texture specifica dell'oggetto
+            glBindTexture(GL_TEXTURE_2D, obj->getOverrideTextureID());
+        } else if (model->hasTexture()) {
+            // Usa la texture del modello base
             glBindTexture(GL_TEXTURE_2D, model->getTextureID());
         } else {
-            // Altrimenti, usa la texture di default
+            // Usa la texture di default
             glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
         }
 
         // Renderizza il modello
-        obj->getModel()->render();
+        model->render();
         
         // Scollega esplicitamente la texture per evitare interferenze
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -495,10 +517,10 @@ void renderSceneControlPanel() {
             openModelFile();
         }
         
-        if (ImGui::Button("Load Texture", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
-            openTextureFile();
+        if (ImGui::Button("Load Image", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+            openImageFile();
         }
-        
+
         ImGui::Separator();
         
         // Codice esistente per aggiungere modelli predefiniti
@@ -681,6 +703,35 @@ void processKeyboardShortcuts(GLFWwindow* window) {
     }
 }
 
+void openTextureFile() {
+    std::string texturePath;
+    GLuint textureID;
+    bool needsConfirmation = false;
+
+    if (ModelLoader::openTextureFile(modelManager, sceneManager,
+        texturePath, textureID, needsConfirmation)) {
+        if (needsConfirmation && !dontAskTextureReplace) {
+            // Mostra dialogo di conferma - il dialogo è già implementato nel render loop
+            textureReplaceDialog.show = true;
+            textureReplaceDialog.texturePath = texturePath;
+            textureReplaceDialog.newTextureID = textureID;
+        }
+        else if (needsConfirmation && dontAskTextureReplace) {
+            // Applica automaticamente se l'utente ha scelto "Non chiedere più"
+            ModelLoader::applyTextureToSelected(sceneManager, textureID);
+        }
+        // Se needsConfirmation è false, la texture è già stata applicata automaticamente
+    }
+    else {
+        // Errore nel caricamento - mostra solo se c'è un problema reale
+        if (!texturePath.empty()) {
+            errorDialog.show = true;
+            errorDialog.title = "Texture Loading Error";
+            errorDialog.message = "Unable to load the texture from the selected file.";
+        }
+    }
+}
+
 void openModelFile() {
     glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
         mouseControl.camPos, 
@@ -694,8 +745,35 @@ void openModelFile() {
         objectSelected, showSelectedModelPanel);
 }
 
-void openTextureFile() {
-    ModelLoader::openTextureFile(modelManager, sceneManager);
+void openImageFile() {
+    // Calcola la posizione di spawn valida
+    glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
+        mouseControl.camPos, 
+        mouseControl.cameraTarget, 
+        0.5f,  // offset Y
+        1.0f   // raggio collisione
+    );
+    
+    std::string errorMessage;
+    ModelLoader loader;
+    
+    // Chiama la funzione openImageFile di ModelLoader
+    bool success = loader.openImageFile(
+        modelManager, 
+        sceneManager,
+        mouseControl.camPos, 
+        spawnPos,
+        objectSelected, 
+        showSelectedModelPanel, 
+        errorMessage
+    );
+    
+    // Gestione errori
+    if (!success && !errorMessage.empty()) {
+        errorDialog.show = true;
+        errorDialog.title = "Image Loading Error";
+        errorDialog.message = errorMessage;
+    }
 }
 
 int main() {
@@ -783,9 +861,6 @@ int main() {
         // Input
         win.processInput();
         win.pollEvents();
-        
-        // Gestione scorciatoie da tastiera
-        processKeyboardShortcuts(win.getGLFWwindow());
 
         // Aggiorna le matrici una sola volta per frame
         int width, height;
@@ -804,17 +879,20 @@ int main() {
         // Creazione griglia
         grid.render(gridShader, projection, view, mouseControl.camPos);
 
-        // Renderizza tutti gli oggetti della scena
-        renderScene(shader, view, projection);
-
-        // Generazione frame ImGui
+        // Generazione frame ImGui - DEVE ESSERE PRIMA DI renderImGuizmo
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
         
-        // Renderizza ImGuizmo prima di ImGui ma dopo ImGui::NewFrame()
-        renderImGuizmo(view, projection);
+        // Inizializza ImGuizmo dopo ImGui
+        ImGuizmo::BeginFrame();
         
+        // ORA puoi renderizzare la scena e ImGuizmo
+        renderScene(shader, view, projection);
+        if (objectSelected) {
+            renderImGuizmo(view, projection);
+        }
+
         // Creazione del menu ImGui
         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, ImGui::GetIO().DisplaySize.y), ImGuiCond_Always);
@@ -1138,78 +1216,186 @@ int main() {
                                 isEditingName = false;
                             }
                         }
-    
-                        ImGui::Separator();
                     }
+                    ImGui::Spacing();
+                    
+                    // SEZIONE APPEARANCE
+                    ImGui::Separator();
+                    ImGui::Text("Appearance:");
+                    
+                    if (ImGui::Button("Load Texture", ImVec2(ImGui::GetContentRegionAvail().x, 35))) {
+                        std::string texturePath;
+                        GLuint textureID;
+                        bool needsConfirmation = false;
+                        
+                        if (ModelLoader::openTextureFile(modelManager, sceneManager, 
+                                     texturePath, textureID, needsConfirmation)) {
+                            if (needsConfirmation && !dontAskTextureReplace) {
+                                // Mostra dialogo di conferma
+                                textureReplaceDialog.show = true;
+                                textureReplaceDialog.texturePath = texturePath;
+                                textureReplaceDialog.newTextureID = textureID;
+                            } else if (needsConfirmation && dontAskTextureReplace) {
+                                // Applica automaticamente se l'utente ha scelto "Non chiedere più"
+                                ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
+                            }
+                            // Se needsConfirmation è false, la texture è già stata applicata
+                        } else {
+                            // Errore nel caricamento - mostra solo se c'è un problema reale
+                            if (!texturePath.empty()) {
+                                errorDialog.show = true;
+                                errorDialog.title = "Errore Texture";
+                                errorDialog.message = "Impossibile caricare la texture dal file selezionato.";
+                            }
+                        }
+                    }
+                    
+                    // Pulsante per aprire color picker
+                    static bool showColorPicker = false;
+                    if (ImGui::Button("Choose Color", ImVec2(ImGui::GetContentRegionAvail().x, 35))) {
+                        showColorPicker = !showColorPicker;
+                    }
+                    
+                    // Finestra popup del color picker
+                    if (showColorPicker) {
+                        ImGui::SetNextWindowPos(ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 10, ImGui::GetWindowPos().y + 200), ImGuiCond_FirstUseEver);
+                        ImGui::SetNextWindowSize(ImVec2(350, 450), ImGuiCond_FirstUseEver);
+                        
+                        if (ImGui::Begin("Color Picker", &showColorPicker, ImGuiWindowFlags_NoCollapse)) {
+                            static glm::vec4 color = selectedObj->hasOverrideColor() ? 
+                                selectedObj->getOverrideColor() : glm::vec4(1.0f);
+                            
+                            // Color picker con ruota dei colori
+                            ImGuiColorEditFlags flags = ImGuiColorEditFlags_AlphaBar | 
+                                                       ImGuiColorEditFlags_AlphaPreview |
+                                                       ImGuiColorEditFlags_DisplayRGB |
+                                                       ImGuiColorEditFlags_DisplayHSV |
+                                                       ImGuiColorEditFlags_PickerHueWheel;
+                            
 
-                    // Aggiungi uno spazio prima del pulsante di eliminazione
+                            if (ImGui::ColorPicker4("##ColorPicker", &color.x, flags)) {
+                                selectedObj->setOverrideColor(color);
+                                selectedObj->clearOverrideTexture();
+                            }
+                            
+                            ImGui::Separator();
+                            ImGui::Text("Preset Colors:");
+                            
+                            float buttonSize = 40.0f;
+                            float spacing = 5.0f;
+                            
+                            // Prima riga
+                            if (ImGui::ColorButton("##Red", ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Green", ImVec4(0.0f, 1.0f, 0.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(0.0f, 1.0f, 0.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Blue", ImVec4(0.0f, 0.0f, 1.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Yellow", ImVec4(1.0f, 1.0f, 0.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(1.0f, 1.0f, 0.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+							
+                            // Seconda riga
+                            if (ImGui::ColorButton("##Cyan", ImVec4(0.0f, 1.0f, 1.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Magenta", ImVec4(1.0f, 0.0f, 1.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##White", ImVec4(1.0f, 1.0f, 1.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Black", ImVec4(0.0f, 0.0f, 0.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+							
+                            // Terza riga - tonalità intermedie
+                            if (ImGui::ColorButton("##Orange", ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(1.0f, 0.5f, 0.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Purple", ImVec4(0.5f, 0.0f, 1.0f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(0.5f, 0.0f, 1.0f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Pink", ImVec4(1.0f, 0.0f, 0.5f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(1.0f, 0.0f, 0.5f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            ImGui::SameLine(0, spacing);
+                            if (ImGui::ColorButton("##Gray", ImVec4(0.5f, 0.5f, 0.5f, 1.0f), 0, ImVec2(buttonSize, buttonSize))) {
+                                color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+                                selectedObj->setOverrideColor(color);
+                            }
+                            
+                            ImGui::Separator();
+                            
+                            // Pulsante reset
+                            if (ImGui::Button("Reset to Default", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                                selectedObj->clearOverrideColor();
+                                color = glm::vec4(1.0f);
+                            }
+                            
+                            ImGui::End();
+                        }
+                    }
+                    
+                    // Mostra stato corrente
+                    ImGui::Spacing();
+                    auto model = selectedObj->getModel();
+                    if (selectedObj->hasOverrideTexture()) {
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Texture select");
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Remove")) {
+                            selectedObj->clearOverrideTexture();
+                            selectedObj->clearOverrideColor();
+                        }
+                    } else if (selectedObj->hasOverrideColor()) {
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Color select");
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Remove")) {
+                            selectedObj->clearOverrideColor();
+                        }
+                    } else {
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default appearance");
+                    }
+                    
                     ImGui::Separator();
                     ImGui::Spacing();
                     
-                    // Crea uno stile per il pulsante rosso di eliminazione
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));         // Rosso
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));  // Rosso più chiaro
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));   // Rosso più scuro
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
 
-                    // Pulsante di eliminazione a fondo pannello
-                    if (ImGui::Button("Delete Object", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+                    if (ImGui::Button("Delete Object", ImVec2(ImGui::GetContentRegionAvail().x, 35))) {
                         showDeleteConfirmation = true;
                         objectToDeleteId = selectedObj->getId();
                     }
 
-                    // Ripristina lo stile originale
                     ImGui::PopStyleColor(3);
                 } else {
                     ImGui::Text("No object selected");
                     if (!pinSelectedModelPanel) {
                         showSelectedModelPanel = false;
-                    }
-                }
-                
-                // Salva le dimensioni solo se l'utente ha effettivamente ridimensionato la finestra
-                if (ImGui::IsWindowHovered() && ImGui::IsMouseDragging(0)) {
-                    selectedPanelSize = ImGui::GetWindowSize();
-                }
-
-                // Aggiungi nella sezione del pannello Selected Object
-                if (selectedObj) {
-                    // Dopo le sezioni esistenti (posizione, rotazione, scala)
-                    ImGui::Separator();
-                    ImGui::Text("Texture & Colors:");
-
-                    // Color picker completo
-                    static glm::vec4 color = selectedObj->hasOverrideColor() ? selectedObj->getOverrideColor() : glm::vec4(1.0f);
-                    if (ImGui::ColorEdit4("Object Color", &color.x)) {
-                        selectedObj->setOverrideColor(color);
-                    }
-
-                    // Pulsanti per colori predefiniti
-                    ImGui::Text("Preset Colors:");
-                    ImGui::SameLine();
-                    if (ImGui::ColorButton("Red", ImVec4(1.0f, 0.0f, 0.0f, 1.0f))) {
-                        selectedObj->setOverrideColor(glm::vec4(1.0f, 0.0f, 0.0f, 1.0f));
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::ColorButton("Green", ImVec4(0.0f, 1.0f, 0.0f, 1.0f))) {
-                        selectedObj->setOverrideColor(glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::ColorButton("Blue", ImVec4(0.0f, 0.0f, 1.0f, 1.0f))) {
-                        selectedObj->setOverrideColor(glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::ColorButton("White", ImVec4(1.0f, 1.0f, 1.0f, 1.0f))) {
-                        selectedObj->setOverrideColor(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
-                    }
-
-                    // Pulsante per ripristinare la texture/colore originale
-                    if (ImGui::Button("Reset to Default", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-                        selectedObj->clearOverrideColor();
-                    }
-                    
-                    // Pulsante per caricare textures
-                    if (ImGui::Button("Load Texture...", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-                        openTextureFile();
                     }
                 }
                 
@@ -1290,7 +1476,7 @@ int main() {
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
                 
                 // Layout con due pulsanti allineati
-                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2;
+                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
                 
                 if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
                     showDeleteConfirmation = false;
@@ -1334,7 +1520,159 @@ int main() {
             ImGui::PopStyleVar();
         }
 
+        // Finestra modale di errore
+        if (errorDialog.show) {
+            // Centra la finestra di dialogo
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            
+            // Assicurati di aprire il popup PRIMA di BeginPopupModal
+            ImGui::OpenPopup(errorDialog.title.c_str());
+            
+            // Imposta lo stile della finestra modale
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
+            ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+            
+            // Usa BeginPopupModal per creare la finestra di errore
+            if (ImGui::BeginPopupModal(errorDialog.title.c_str(), NULL, 
+                              ImGuiWindowFlags_AlwaysAutoResize | 
+                              ImGuiWindowFlags_NoSavedSettings)) {
+                
+                // Icona di errore (simbolo)
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERROR");
+                ImGui::SameLine();
+                ImGui::TextWrapped("%s", errorDialog.message.c_str());
+                
+                if (!errorDialog.details.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextWrapped("Details: %s", errorDialog.details.c_str());
+                }
+                
+                ImGui::Separator();
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
+                
+                // Pulsante OK centrato
+                float buttonWidth = 120.0f;
+                float windowWidth = ImGui::GetWindowSize().x;
+                ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
+                
+                if (ImGui::Button("OK", ImVec2(buttonWidth, 0)) || 
+                    ImGui::IsKeyPressed(ImGuiKey_Enter) || 
+                    ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                    errorDialog.show = false;
+                    errorDialog.title = "";
+                    errorDialog.message = "";
+                    errorDialog.details = "";
+                    ImGui::CloseCurrentPopup();
+                }
+                
+                ImGui::EndPopup();
+            }
+            
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+        }
+
+        if (textureReplaceDialog.show) {
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+            ImGui::OpenPopup("Replace Texture?");
+
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
+            ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.6f, 0.9f, 1.0f));
+
+            if (ImGui::BeginPopupModal("Replace Texture?", NULL,
+                ImGuiWindowFlags_AlwaysAutoResize |
+                ImGuiWindowFlags_NoSavedSettings)) {
+
+                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "WARNING");
+                ImGui::SameLine();
+                ImGui::TextWrapped("This object already has a custom texture applied.");
+
+                ImGui::Spacing();
+                ImGui::TextWrapped("Do you want to replace it with the new texture?");
+
+                ImGui::Separator();
+                ImGui::Text("New texture:");
+                ImGui::BulletText("%s", std::filesystem::path(textureReplaceDialog.texturePath).filename().string().c_str());
+
+                ImGui::Separator();
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
+
+                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+
+                // Pulsante "Don't Replace"
+                if (ImGui::Button("Don't Replace", ImVec2(buttonWidth, 30))) {
+                    if (textureReplaceDialog.newTextureID != 0) {
+                        glDeleteTextures(1, &textureReplaceDialog.newTextureID);
+                    }
+
+                    textureReplaceDialog.show = false;
+                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.newTextureID = 0;
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::SameLine();
+
+                // Pulsante "Don't Ask Again"
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.0f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.5f, 0.1f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.3f, 0.0f, 1.0f));
+
+                if (ImGui::Button("Don't Ask Again", ImVec2(buttonWidth, 30))) {
+                    dontAskTextureReplace = true;
+                    ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
+
+                    textureReplaceDialog.show = false;
+                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.newTextureID = 0;
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::PopStyleColor(3);
+
+                ImGui::SameLine();
+
+                // Pulsante "Yes, Replace"
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.1f, 1.0f));
+
+                if (ImGui::Button("Yes, Replace", ImVec2(buttonWidth, 30))) {
+                    ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
+
+                    textureReplaceDialog.show = false;
+                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.newTextureID = 0;
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::PopStyleColor(3);
+
+                if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                    if (textureReplaceDialog.newTextureID != 0) {
+                        glDeleteTextures(1, &textureReplaceDialog.newTextureID);
+                    }
+
+                    textureReplaceDialog.show = false;
+                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.newTextureID = 0;
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
+
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+        }
+
         ImGui::Render();
+
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         win.swapBuffers();
     }
@@ -1389,21 +1727,17 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
         ImGuizmo::DecomposeMatrixToComponents(
             glm::value_ptr(modelMatrix),
             glm::value_ptr(position),
-            glm::value_ptr(euler), // Decomponi in Euler per calcolare il delta
+            glm::value_ptr(euler),
             glm::value_ptr(scale)
         );
     
-        // Calcola il delta di rotazione e applicalo agli nostri angoli di visualizzazione
         glm::vec3 deltaRotation = euler - glm::degrees(glm::eulerAngles(selectedObj->getRotation()));
         displayedEulerAngles += deltaRotation;
     
-        // Crea il nuovo quaternione dagli angoli di visualizzazione aggiornati
         rotation = glm::quat(glm::radians(displayedEulerAngles));
     
-        // Aggiorna l'oggetto
         sceneManager.updateObjectPosition(selectedObj->getId(), position);
         sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
         sceneManager.updateObjectScale(selectedObj->getId(), scale);
     }
-
-};
+}

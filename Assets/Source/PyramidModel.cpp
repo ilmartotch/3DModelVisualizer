@@ -52,6 +52,8 @@ void PyramidModel::initialize() {
         13, 14, 15
     };
 
+    hasUVs = false;
+
     glGenVertexArrays(1, &m_vao);
 	glGenBuffers(1, &m_vbo);
     glGenBuffers(1, &m_ebo);
@@ -64,10 +66,33 @@ void PyramidModel::initialize() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(unsigned int), m_indices.data(), GL_STATIC_DRAW);
 
-    setupVertexAttributes();
+	setupVertexAttributes();
 
     glBindVertexArray(0);
     m_initialized = true;
+}
+
+void PyramidModel::setupVertexAttributes() {
+    // Controlla se abbiamo UV o no
+    GLsizei stride = hasUVs ? 8 * sizeof(float) : 6 * sizeof(float);
+
+    // Posizioni (location 0)
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Normali (location 1)
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    // UV (location 2) - solo se presenti
+    if (hasUVs) {
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
+        glEnableVertexAttribArray(2);
+    }
+    else {
+        // Disabilita l'attributo UV se non presente
+        glDisableVertexAttribArray(2);
+    }
 }
 
 void PyramidModel::render() {
@@ -85,16 +110,6 @@ void PyramidModel::cleanup() {
     glDeleteBuffers(1, &m_ebo);
     m_ebo = 0;
 	m_initialized = false;
-}
-
-void PyramidModel::setupVertexAttributes() {
-    GLsizei stride = 6 * sizeof(float);
-	// Posizioni (location 0)
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
-	glEnableVertexAttribArray(0);
-	// Normali (location 1)
-	glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
-	glEnableVertexAttribArray(1);
 }
 
 std::shared_ptr<Model> PyramidModel::clone() const {

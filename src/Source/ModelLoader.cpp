@@ -72,7 +72,7 @@ bool ModelLoader::openModelFile(ModelManager& modelManager, SceneManager& sceneM
 #endif
 }
 
-
+// Gestione coerente del caricamento texture
 bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& sceneManager,
                                  std::string& outTexturePath, GLuint& outTextureID,
                                  bool& needsConfirmation) {
@@ -107,15 +107,18 @@ bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& scen
         std::cout << "File: " << filePath << std::endl;
         std::cout << "Oggetto: " << selectedObj->getName() << std::endl;
         
-        // Verifica se l'oggetto ha già una texture override
-        bool hasExistingTexture = selectedObj->hasOverrideTexture();
-        
-        // NUOVO: Verifica anche se il modello base è un ImportedModel con texture
+        // MODIFICA: Verifica se c'è già una texture (override O modello con texture)
+        bool hasExistingOverride = selectedObj->hasOverrideTexture();
         std::shared_ptr<Model> model = selectedObj->getModel();
-        auto importedModel = std::dynamic_pointer_cast<ImportedModel>(model);
-        bool isImportedModelWithTexture = (importedModel != nullptr && model->hasTexture());
+        bool hasModelTexture = (model && model->hasTexture() && model->getTextureID() != 0);
         
-        // Carica la texture
+        // IMPORTANTE: Unbind qualsiasi texture attiva prima di caricare la nuova
+        glBindTexture(GL_TEXTURE_2D, 0);
+        
+        // Pulisci eventuali errori OpenGL precedenti
+        while (glGetError() != GL_NO_ERROR);
+        
+        // Carica la NUOVA texture
         GLuint textureID = loadTexture(filePath);
         if (textureID == 0) {
             std::cerr << "ERRORE: Impossibile caricare la texture: " << filePath << std::endl;
@@ -123,19 +126,21 @@ bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& scen
         }
         
         outTextureID = textureID;
+        
+        std::cout << "Texture caricata con successo (ID: " << textureID << ")" << std::endl;
 
-        // Richiedi conferma se c'è una texture override O se è un modello importato con texture
-        if (hasExistingTexture || isImportedModelWithTexture) {
-            if (hasExistingTexture) {
-                std::cout << "L'oggetto ha già una texture custom. Richiesta conferma..." << std::endl;
-            } else if (isImportedModelWithTexture) {
-                std::cout << "Il modello importato ha già una texture. Richiesta conferma..." << std::endl;
+        // MODIFICA: Richiedi conferma se c'è GIÀ una texture applicata (override o modello)
+        if (hasExistingOverride || hasModelTexture) {
+            if (hasExistingOverride) {
+                std::cout << "L'oggetto ha già una texture override. Richiesta conferma..." << std::endl;
+            } else {
+                std::cout << "Il modello ha già una texture. Richiesta conferma..." << std::endl;
             }
             needsConfirmation = true;
             return true; // Restituisce true ma con needsConfirmation=true
         }
 
-        // Se non c'è texture override né modello con texture, applica direttamente
+        // Se non c'è texture, applica direttamente
         if (model && !model->hasUVCoordinates()) {
             std::cout << "Il modello non ha coordinate UV, generazione automatica..." << std::endl;
             model->generateProceduralUVs(Model::UVMappingType::AUTO);
@@ -162,11 +167,16 @@ bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& scen
 #endif
 }
 
-// Nuovo metodo per applicare la texture dopo la conferma
+
 bool ModelLoader::applyTextureToSelected(SceneManager& sceneManager, GLuint textureID) {
     auto selectedObj = sceneManager.getSelectedObject();
     if (!selectedObj) {
         std::cerr << "ERRORE: Nessun oggetto selezionato." << std::endl;
+        return false;
+    }
+    
+    if (textureID == 0) {
+        std::cerr << "ERRORE: ID texture non valido (0)." << std::endl;
         return false;
     }
 
@@ -177,9 +187,10 @@ bool ModelLoader::applyTextureToSelected(SceneManager& sceneManager, GLuint text
         model->generateProceduralUVs(Model::UVMappingType::AUTO);
     }
     
+    selectedObj->clearOverrideColor();
+    
     // Applica la texture all'oggetto (override)
     selectedObj->setOverrideTexture(textureID);
-    selectedObj->clearOverrideColor();
     
     std::cout << "Texture applicata con successo!" << std::endl;
     std::cout << "   - ID texture: " << textureID << std::endl;
@@ -407,6 +418,15 @@ unsigned int ModelLoader::loadTexture(const std::string& path) {
         return textureCache[path];
     }
     
+// Unbind qualsiasi texture attiva
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    // Pulisci eventuali errori OpenGL precedenti
+    GLenum error;
+    while ((error = glGetError()) != GL_NO_ERROR) {
+        std::cerr << "Errore OpenGL precedente ripulito: 0x" << std::hex << error << std::dec << std::endl;
+    }
+    
     // Crea una nuova texture
     unsigned int textureID;
     glGenTextures(1, &textureID);
@@ -449,10 +469,10 @@ unsigned int ModelLoader::loadTexture(const std::string& path) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); // Senza mipmap inizialmente
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         
         // Verifica lo stato OpenGL prima di caricare
-        GLenum error = glGetError();
+        error = glGetError();
         if (error != GL_NO_ERROR) {
             std::cerr << "Errore OpenGL prima di glTexImage2D: 0x" << std::hex << error << std::dec << std::endl;
             stbi_image_free(data);

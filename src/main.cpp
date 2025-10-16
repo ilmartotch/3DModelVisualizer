@@ -455,53 +455,57 @@ void initializePickingSystem() {
     }
 }
 
-// Implementazione corretta della funzione renderScene
+
 void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection) {
-    // Configurazione uniforme degli shader
     glUseProgram(shader);
     SetUniformMat4(shader, "view", view);
     SetUniformMat4(shader, "projection", projection);
-    SetUniformInt(shader, "textureSampler", 0);
     SetUniformVec3(shader, "viewPos", mouseControl.camPos);
     SetUniformFloat(shader, "time", timeValue);
     
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     
-    // Renderizza tutti gli oggetti nella scena
     for (const auto& obj : sceneManager.getObjects()) {
         glm::mat4 modelMatrix = obj->getModelMatrix();
         SetUniformMat4(shader, "model", modelMatrix);
         
-        if (obj->hasOverrideColor()) {
-            SetUniformInt(shader, "useOverrideColor", 1);
-            SetUniformVec4(shader, "overrideColor", obj->getOverrideColor());
-        } else {
-            SetUniformInt(shader, "useOverrideColor", 0);
-        }
-
-        // Ottieni il modello
         std::shared_ptr<Model> model = obj->getModel();
         
-        // Assicurati che la texture corretta sia attiva
+        // Gestione texture con priorità corretta
         glActiveTexture(GL_TEXTURE0);
+        SetUniformInt(shader, "textureSampler", 0);
         
-        // MODIFICA: Priorità alla texture dell'oggetto, poi del modello
+        // 1. PRIORITÀ: Texture override dell'oggetto
         if (obj->hasOverrideTexture()) {
-            // Usa la texture specifica dell'oggetto
             glBindTexture(GL_TEXTURE_2D, obj->getOverrideTextureID());
-        } else if (model->hasTexture()) {
-            // Usa la texture del modello base
-            glBindTexture(GL_TEXTURE_2D, model->getTextureID());
-        } else {
-            // Usa la texture di default
+            SetUniformInt(shader, "useOverrideColor", 0);
+            SetUniformInt(shader, "useTexture", 1);
+        }
+        // 2. Colore override dell'oggetto (solo se NON c'è texture)
+        else if (obj->hasOverrideColor()) {
+            // Usa texture bianca di default per applicare il colore uniformemente
             glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
+            SetUniformInt(shader, "useOverrideColor", 1);
+            SetUniformVec4(shader, "overrideColor", obj->getOverrideColor());
+            SetUniformInt(shader, "useTexture", 0);
+        }
+        // 3. Texture del modello base
+        else if (model->hasTexture()) {
+            glBindTexture(GL_TEXTURE_2D, model->getTextureID());
+            SetUniformInt(shader, "useOverrideColor", 0);
+            SetUniformInt(shader, "useTexture", 1);
+        }
+        // 4. Default: nessuna texture, usa colore base
+        else {
+            glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
+            SetUniformInt(shader, "useOverrideColor", 0);
+            SetUniformInt(shader, "useTexture", 0);
         }
 
-        // Renderizza il modello
         model->render();
         
-        // Scollega esplicitamente la texture per evitare interferenze
+        // Cleanup: scollega la texture
         glBindTexture(GL_TEXTURE_2D, 0);
     }
 }
@@ -717,8 +721,13 @@ void openTextureFile() {
             textureReplaceDialog.newTextureID = textureID;
         }
         else if (needsConfirmation && dontAskTextureReplace) {
-            // Applica automaticamente se l'utente ha scelto "Non chiedere più"
-            ModelLoader::applyTextureToSelected(sceneManager, textureID);
+            // Applica la texture E pulisci il colore
+            if (auto selectedObj = sceneManager.getSelectedObject()) {
+                selectedObj->setOverrideTexture(textureID);
+            }
+            if (auto selectedObj = sceneManager.getSelectedObject()) {
+                selectedObj->clearOverrideColor();
+            }
         }
         // Se needsConfirmation è false, la texture è già stata applicata automaticamente
     }
@@ -1231,21 +1240,19 @@ int main() {
                         if (ModelLoader::openTextureFile(modelManager, sceneManager, 
                                      texturePath, textureID, needsConfirmation)) {
                             if (needsConfirmation && !dontAskTextureReplace) {
-                                // Mostra dialogo di conferma
                                 textureReplaceDialog.show = true;
                                 textureReplaceDialog.texturePath = texturePath;
                                 textureReplaceDialog.newTextureID = textureID;
                             } else if (needsConfirmation && dontAskTextureReplace) {
-                                // Applica automaticamente se l'utente ha scelto "Non chiedere più"
-                                ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
+                                // Applica la texture E pulisci il colore
+                                selectedObj->setOverrideTexture(textureID);
+                                selectedObj->clearOverrideColor();
                             }
-                            // Se needsConfirmation è false, la texture è già stata applicata
                         } else {
-                            // Errore nel caricamento - mostra solo se c'è un problema reale
                             if (!texturePath.empty()) {
                                 errorDialog.show = true;
-                                errorDialog.title = "Errore Texture";
-                                errorDialog.message = "Impossibile caricare la texture dal file selezionato.";
+                                errorDialog.title = "Texture Loading Error";
+                                errorDialog.message = "Unable to load the texture from the selected file.";
                             }
                         }
                     }
@@ -1274,8 +1281,8 @@ int main() {
                             
 
                             if (ImGui::ColorPicker4("##ColorPicker", &color.x, flags)) {
+                                // Imposta il colore E pulisci la texture
                                 selectedObj->setOverrideColor(color);
-                                selectedObj->clearOverrideTexture();
                             }
                             
                             ImGui::Separator();
@@ -1352,6 +1359,7 @@ int main() {
                             // Pulsante reset
                             if (ImGui::Button("Reset to Default", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
                                 selectedObj->clearOverrideColor();
+                                selectedObj->clearOverrideTexture();
                                 color = glm::vec4(1.0f);
                             }
                             
@@ -1359,24 +1367,26 @@ int main() {
                         }
                     }
                     
-                    // Mostra stato corrente
                     ImGui::Spacing();
+
+                    // Mostra stato corrente con informazioni più dettagliate
                     auto model = selectedObj->getModel();
                     if (selectedObj->hasOverrideTexture()) {
-                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Texture select");
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Custom Texture Active");
                         ImGui::SameLine();
-                        if (ImGui::SmallButton("Remove")) {
+                        if (ImGui::SmallButton("Remove##Texture")) {
                             selectedObj->clearOverrideTexture();
-                            selectedObj->clearOverrideColor();
                         }
                     } else if (selectedObj->hasOverrideColor()) {
-                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Color select");
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Custom Color Active");
                         ImGui::SameLine();
-                        if (ImGui::SmallButton("Remove")) {
+                        if (ImGui::SmallButton("Remove##Color")) {
                             selectedObj->clearOverrideColor();
                         }
+                    } else if (model->hasTexture()) {
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Model Default Texture");
                     } else {
-                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default appearance");
+                        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default Appearance");
                     }
                     
                     ImGui::Separator();
@@ -1526,11 +1536,14 @@ int main() {
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
             
+            // Imposta dimensione minima e massima per il dialogo
+            ImGui::SetNextWindowSizeConstraints(ImVec2(500, 150), ImVec2(800, 400));
+            
             // Assicurati di aprire il popup PRIMA di BeginPopupModal
             ImGui::OpenPopup(errorDialog.title.c_str());
             
             // Imposta lo stile della finestra modale
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, 20));
             ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
             
@@ -1538,6 +1551,9 @@ int main() {
             if (ImGui::BeginPopupModal(errorDialog.title.c_str(), NULL, 
                               ImGuiWindowFlags_AlwaysAutoResize | 
                               ImGuiWindowFlags_NoSavedSettings)) {
+                
+                // Layout migliorato con wrap del testo
+                ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
                 
                 // Icona di errore (simbolo)
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERROR");
@@ -1548,6 +1564,8 @@ int main() {
                     ImGui::Separator();
                     ImGui::TextWrapped("Details: %s", errorDialog.details.c_str());
                 }
+                
+                ImGui::PopTextWrapPos();
                 
                 ImGui::Separator();
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
@@ -1574,13 +1592,17 @@ int main() {
             ImGui::PopStyleVar();
         }
 
+        // Finestra di conferma sostituzione texture
         if (textureReplaceDialog.show) {
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            
+            // Imposta dimensione adeguata per il contenuto
+            ImGui::SetNextWindowSizeConstraints(ImVec2(600, 200), ImVec2(900, 400));
 
             ImGui::OpenPopup("Replace Texture?");
 
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, 20));
             ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.6f, 0.9f, 1.0f));
 
@@ -1588,24 +1610,33 @@ int main() {
                 ImGuiWindowFlags_AlwaysAutoResize |
                 ImGuiWindowFlags_NoSavedSettings)) {
 
+                // Layout migliorato con wrap del testo
+                ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
+                
                 ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.0f, 1.0f), "WARNING");
                 ImGui::SameLine();
-                ImGui::TextWrapped("This object already has a custom texture applied.");
+                ImGui::TextWrapped("This object already has a texture applied.");
 
                 ImGui::Spacing();
                 ImGui::TextWrapped("Do you want to replace it with the new texture?");
 
                 ImGui::Separator();
                 ImGui::Text("New texture:");
+                ImGui::Indent(20);
                 ImGui::BulletText("%s", std::filesystem::path(textureReplaceDialog.texturePath).filename().string().c_str());
+                ImGui::Unindent(20);
+                
+                ImGui::PopTextWrapPos();
 
                 ImGui::Separator();
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
 
-                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+                // Layout pulsanti migliorato
+                float totalWidth = ImGui::GetContentRegionAvail().x;
+                float buttonWidth = (totalWidth - 20) / 3; // 3 pulsanti con spacing
 
                 // Pulsante "Don't Replace"
-                if (ImGui::Button("Don't Replace", ImVec2(buttonWidth, 30))) {
+                if (ImGui::Button("Don't Replace", ImVec2(buttonWidth, 35))) {
                     if (textureReplaceDialog.newTextureID != 0) {
                         glDeleteTextures(1, &textureReplaceDialog.newTextureID);
                     }
@@ -1623,7 +1654,7 @@ int main() {
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.5f, 0.1f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.3f, 0.0f, 1.0f));
 
-                if (ImGui::Button("Don't Ask Again", ImVec2(buttonWidth, 30))) {
+                if (ImGui::Button("Don't Ask Again", ImVec2(buttonWidth, 35))) {
                     dontAskTextureReplace = true;
                     ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
 
@@ -1642,7 +1673,7 @@ int main() {
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.1f, 1.0f));
 
-                if (ImGui::Button("Yes, Replace", ImVec2(buttonWidth, 30))) {
+                if (ImGui::Button("Yes, Replace", ImVec2(buttonWidth, 35))) {
                     ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
 
                     textureReplaceDialog.show = false;

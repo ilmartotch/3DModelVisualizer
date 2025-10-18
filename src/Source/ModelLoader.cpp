@@ -6,6 +6,7 @@
 #include <stb_image.h>
 #include <limits>
 #include <algorithm>
+#include <thread>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -13,6 +14,15 @@
 #include <windows.h>
 #include <GLFW/glfw3native.h>
 #endif
+
+// Callback globale per progresso
+ModelLoader::ProgressCallback ModelLoader::s_progressCallback = nullptr;
+
+void ModelLoader::reportProgress(float progress, const std::string& message) {
+    if (s_progressCallback) {
+        s_progressCallback(progress, message);
+    }
+}
 
 bool ModelLoader::openModelFile(ModelManager& modelManager, SceneManager& sceneManager,
     const glm::vec3& cameraPos, const glm::vec3& cameraTarget,
@@ -212,104 +222,204 @@ ImportedModel::~ImportedModel() {
 
 void ImportedModel::initialize() {
     if (meshes.empty()) {
-        std::cerr << "Error: No mesh data available for model: " << getName() << std::endl;
+        std::cerr << "ERROR: No mesh data for model: " << getName() << std::endl;
         return;
     }
     
-    // Crea il VAO
-    glGenVertexArrays(1, &VAO);
-    glBindVertexArray(VAO);
+    meshRenderData.clear();
+    meshRenderData.reserve(meshes.size());
     
-    // Per ogni mesh, crea i buffer necessari
-    for (const auto& mesh : meshes) {
-        GLuint vbo_vertices, vbo_normals, vbo_texcoords;
+    std::cout << "=== Inizializzazione " << getName() << " ===" << std::endl;
+    std::cout << "  Mesh: " << meshes.size() << std::endl;
+    std::cout << "  Texture disponibili: " << textures.size() << std::endl;
+    
+    for (size_t i = 0; i < textures.size(); ++i) {
+        std::cout << "    Texture[" << i << "]: ID=" << textures[i].id 
+                  << " tipo=" << textures[i].type 
+                  << " path=" << textures[i].path << std::endl;
+    }
+    
+    for (size_t i = 0; i < meshes.size(); ++i) {
+        const auto& mesh = meshes[i];
+        MeshRenderData renderData;
         
-        // VBO per i vertici
-        glGenBuffers(1, &vbo_vertices);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_vertices);
+        // 1. VAO
+        glGenVertexArrays(1, &renderData.VAO);
+        glBindVertexArray(renderData.VAO);
+        
+        // 2. VBO vertici
+        glGenBuffers(1, &renderData.VBO_vertices);
+        glBindBuffer(GL_ARRAY_BUFFER, renderData.VBO_vertices);
         glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(float), 
-                   mesh.vertices.data(), GL_STATIC_DRAW);
+                     mesh.vertices.data(), GL_STATIC_DRAW);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
         glEnableVertexAttribArray(0);
         
-        // VBO per le normali, se disponibili
+        // 3. VBO normali
         if (!mesh.normals.empty()) {
-            glGenBuffers(1, &vbo_normals);
-            glBindBuffer(GL_ARRAY_BUFFER, vbo_normals);
+            glGenBuffers(1, &renderData.VBO_normals);
+            glBindBuffer(GL_ARRAY_BUFFER, renderData.VBO_normals);
             glBufferData(GL_ARRAY_BUFFER, mesh.normals.size() * sizeof(float), 
-                       mesh.normals.data(), GL_STATIC_DRAW);
+                         mesh.normals.data(), GL_STATIC_DRAW);
             glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
             glEnableVertexAttribArray(1);
-            vbos.push_back(vbo_normals);
         }
         
-        // VBO per le coordinate texture, se disponibili
+        // 4. VBO texture coordinates
         if (!mesh.texCoords.empty()) {
-            glGenBuffers(1, &vbo_texcoords);
-            glBindBuffer(GL_ARRAY_BUFFER, vbo_texcoords);
+            glGenBuffers(1, &renderData.VBO_texCoords);
+            glBindBuffer(GL_ARRAY_BUFFER, renderData.VBO_texCoords);
             glBufferData(GL_ARRAY_BUFFER, mesh.texCoords.size() * sizeof(float), 
-                       mesh.texCoords.data(), GL_STATIC_DRAW);
+                         mesh.texCoords.data(), GL_STATIC_DRAW);
             glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
             glEnableVertexAttribArray(2);
-            vbos.push_back(vbo_texcoords);
+            
+            std::cout << "  Mesh " << i << " ha " << mesh.texCoords.size() / 2 << " coordinate UV" << std::endl;
+        } else {
+            std::cout << "  ATTENZIONE: Mesh " << i << " non ha coordinate UV!" << std::endl;
         }
         
-        // EBO per gli indici
+        // 5. EBO indici
         if (!mesh.indices.empty()) {
-            glGenBuffers(1, &EBO);
-            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-            glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * sizeof(unsigned int),
-                       mesh.indices.data(), GL_STATIC_DRAW);
+            glGenBuffers(1, &renderData.EBO);
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, renderData.EBO);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, 
+                         mesh.indices.size() * sizeof(unsigned int),
+                         mesh.indices.data(), GL_STATIC_DRAW);
+            renderData.indexCount = mesh.indices.size();
         }
         
-        vbos.push_back(vbo_vertices);
+        // 6. FIX CRITICO: Assegna texture alla mesh
+        renderData.textureID = 0;
+        renderData.materialName = mesh.materialName;
+        
+        // Cerca texture per questa mesh
+        if (i < textures.size() && textures[i].type == "texture_diffuse") {
+            renderData.textureID = textures[i].id;
+            std::cout << "  Mesh " << i << " <- Texture diretta ID " << renderData.textureID << std::endl;
+        } else if (!textures.empty()) {
+            // Usa prima texture diffuse disponibile
+            for (const auto& tex : textures) {
+                if (tex.type == "texture_diffuse") {
+                    renderData.textureID = tex.id;
+                    std::cout << "  Mesh " << i << " <- Texture condivisa ID " << renderData.textureID << std::endl;
+                    break;
+                }
+            }
+        }
+        
+        // Verifica finale texture
+        if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
+            std::cout << "  Mesh " << i << " texture validata (ID: " << renderData.textureID << ")" << std::endl;
+        } else if (renderData.textureID != 0) {
+            std::cerr << "  ERRORE: Mesh " << i << " texture ID " << renderData.textureID << " NON VALIDA!" << std::endl;
+            renderData.textureID = 0;
+        } else {
+            std::cout << "  Mesh " << i << " senza texture" << std::endl;
+        }
+        
+        meshRenderData.push_back(renderData);
+        
+        std::cout << "  Mesh " << i << " initialized: " 
+                  << mesh.vertices.size() / 3 << " verts, "
+                  << renderData.indexCount << " indices, "
+                  << "textureID=" << renderData.textureID << std::endl;
     }
     
     glBindVertexArray(0);
+    
+    // Imposta texture principale del modello
+    if (!textures.empty() && textures[0].id != 0) {
+        setTexture(textures[0].id);
+        std::cout << "  Texture principale modello impostata: " << textures[0].id << std::endl;
+    }
+    
     m_initialized = true;
+    std::cout << "=== Fine inizializzazione " << getName() << " ===" << std::endl;
+}
+
+void ImportedModel::renderMesh(size_t meshIndex) {
+    if (meshIndex >= meshRenderData.size()) {
+        std::cerr << "Invalid mesh index: " << meshIndex << std::endl;
+        return;
+    }
+    
+    const auto& renderData = meshRenderData[meshIndex];
+    
+    glBindVertexArray(renderData.VAO);
+    
+    if (renderData.indexCount > 0) {
+        glDrawElements(GL_TRIANGLES, renderData.indexCount, GL_UNSIGNED_INT, 0);
+    } else {
+        glDrawArrays(GL_TRIANGLES, 0, meshes[meshIndex].vertices.size() / 3);
+    }
+    
+    glBindVertexArray(0);
 }
 
 void ImportedModel::render() {
-    if (!m_initialized) {
+    if (!m_initialized || meshRenderData.empty()) {
         std::cerr << "Model not initialized: " << getName() << std::endl;
         return;
     }
     
-    glBindVertexArray(VAO);
-    
-    // NON bind le texture qui, verrà gestita dal renderScene in main.cpp
-    // La priorità è: overrideTexture -> model texture -> default texture
-    
-    // Renderizza la mesh
-    if (EBO != 0 && !meshes.empty()) {
-        // Usa indici se disponibili
-        glDrawElements(GL_TRIANGLES, meshes[0].indices.size(), GL_UNSIGNED_INT, 0);
-    } else if (!meshes.empty()) {
-        // Altrimenti usa vertex array
-        glDrawArrays(GL_TRIANGLES, 0, meshes[0].vertices.size() / 3);
+    // Renderizza ogni mesh con la SUA texture
+    for (size_t i = 0; i < meshRenderData.size(); ++i) {
+        const auto& renderData = meshRenderData[i];
+        
+        glBindVertexArray(renderData.VAO);
+        
+        // Bind texture specifica della mesh se disponibile
+        if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, renderData.textureID);
+        }
+        
+        if (renderData.indexCount > 0) {
+            glDrawElements(GL_TRIANGLES, renderData.indexCount, GL_UNSIGNED_INT, 0);
+        } else {
+            glDrawArrays(GL_TRIANGLES, 0, meshes[i].vertices.size() / 3);
+        }
     }
     
-    // Reimposta lo stato
     glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+// Ottieni nome mesh per UI
+std::string ImportedModel::getMeshName(size_t index) const {
+    if (index >= meshes.size()) return "Invalid";
+    
+    // Usa il nome del materiale se disponibile, altrimenti genera uno
+    if (!meshes[index].materialName.empty()) {
+        return meshes[index].materialName;
+    }
+    return getName() + "_Mesh" + std::to_string(index);
 }
 
 void ImportedModel::cleanup() {
-    if (VAO != 0) {
-        glDeleteVertexArrays(1, &VAO);
-        VAO = 0;
+    // Pulisci tutti i buffer per ogni mesh
+    for (auto& renderData : meshRenderData) {
+        if (renderData.VAO != 0) {
+            glDeleteVertexArrays(1, &renderData.VAO);
+        }
+        if (renderData.VBO_vertices != 0) {
+            glDeleteBuffers(1, &renderData.VBO_vertices);
+        }
+        if (renderData.VBO_normals != 0) {
+            glDeleteBuffers(1, &renderData.VBO_normals);
+        }
+        if (renderData.VBO_texCoords != 0) {
+            glDeleteBuffers(1, &renderData.VBO_texCoords);
+        }
+        if (renderData.EBO != 0) {
+            glDeleteBuffers(1, &renderData.EBO);
+        }
     }
     
-    for (auto& vbo : vbos) {
-        glDeleteBuffers(1, &vbo);
-    }
-    vbos.clear();
+    meshRenderData.clear();
     
-    if (EBO != 0) {
-        glDeleteBuffers(1, &EBO);
-        EBO = 0;
-    }
-    
-    // Elimina le texture
+    // Pulisci texture
     for (auto& texture : textures) {
         glDeleteTextures(1, &texture.id);
     }
@@ -550,6 +660,24 @@ unsigned int ModelLoader::loadTexture(const std::string& path) {
     return textureID;
 }
 
+// Helper per debugging
+static void debugTextureState(const std::string& context, GLuint textureID) {
+    std::cout << "[DEBUG] " << context << std::endl;
+    std::cout << "  Texture ID: " << textureID << std::endl;
+    std::cout << "  glIsTexture: " << (glIsTexture(textureID) ? "YES" : "NO") << std::endl;
+    
+    if (glIsTexture(textureID)) {
+        GLint width, height, format;
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+        glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
+        std::cout << "  Dimensioni: " << width << "x" << height << std::endl;
+        std::cout << "  Formato interno: 0x" << std::hex << format << std::dec << std::endl;
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+}
+
 void ModelLoader::processNode(aiNode* node, const aiScene* scene, 
                             std::shared_ptr<ImportedModel> model, const std::string& directory) {
     std::cout << "Processando nodo: " << node->mName.C_Str() << " con " 
@@ -680,9 +808,39 @@ MeshData ModelLoader::processMesh(aiMesh* mesh, const aiScene* scene) {
     return meshData;
 }
 
-std::vector<TextureData> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTextureType type, 
-                                                       const std::string& typeName, const std::string& directory, 
-                                                       const aiScene* scene, const std::string& modelPath) {
+// Helper per generare hash del contenuto texture
+static std::string generateTextureHash(const unsigned char* data, size_t size) {
+    // Usa i primi 1KB e ultimi 1KB per generare un hash veloce
+    std::stringstream ss;
+    ss << std::hex;
+    
+    size_t sampleSize = std::min(size, size_t(1024));
+    size_t hash = 0;
+    
+    // Hash primi byte
+    for (size_t i = 0; i < sampleSize; ++i) {
+        hash = hash * 31 + data[i];
+    }
+    
+    // Hash ultimi byte se file abbastanza grande
+    if (size > 2048) {
+        for (size_t i = size - sampleSize; i < size; ++i) {
+            hash = hash * 31 + data[i];
+        }
+    }
+    
+    ss << "texture_" << hash << "_" << size;
+    return ss.str();
+}
+
+std::vector<TextureData> ModelLoader::loadMaterialTextures(
+    aiMaterial* mat, 
+    aiTextureType type, 
+    const std::string& typeName, 
+    const std::string& directory, 
+    const aiScene* scene, 
+    const std::string& modelPath) {
+    
     std::vector<TextureData> textures;
     
     std::cout << "Cercando texture di tipo " << typeName << " in " << directory << std::endl;
@@ -697,130 +855,115 @@ std::vector<TextureData> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTe
         texture.path = str.C_Str();
         bool textureLoaded = false;
         
-        // Gestione per texture embedded (iniziano con *)
+        // Gestione texture embedded con hash content
         if (str.length > 0 && str.C_Str()[0] == '*') {
-            // Estrai l'indice della texture embedded
             int textureIndex = std::stoi(str.C_Str() + 1);
             std::cout << "  Rilevata texture embedded con indice: " << textureIndex << std::endl;
             
-            // Usa il path COMPLETO del modello per la chiave univoca
-            std::string uniqueKey = modelPath + "_embedded_" + std::to_string(textureIndex);
-            std::cout << "  Chiave cache texture: " << uniqueKey << std::endl;
-            
-            // Verifica se è già nella cache
-            if (textureCache.find(uniqueKey) != textureCache.end()) {
-                texture.id = textureCache[uniqueKey];
-                textureLoaded = true;
-                std::cout << "  Texture embedded trovata nella cache: " << texture.id << std::endl;
-            } 
-            else if (scene && scene->mTextures && textureIndex < scene->mNumTextures) {
-                // Ottieni la texture embedded direttamente dalla scena
+            if (scene && scene->mTextures && textureIndex < scene->mNumTextures) {
                 const aiTexture* embeddedTex = scene->mTextures[textureIndex];
                 
-                unsigned int textureID;
-                glGenTextures(1, &textureID);
-                glBindTexture(GL_TEXTURE_2D, textureID);
-                
-                // Determina il formato della texture
-                GLenum format;
-                int width, height, channels;
-                unsigned char* data = nullptr;
-                
+                // NUOVO: Genera hash basato sul CONTENUTO invece del path
+                std::string contentHash;
                 if (embeddedTex->mHeight == 0) {
-                    // Texture compressa (i dati sono già in un formato immagine come png/jpg)
-                    std::cout << "  Texture embedded compressa (formato: " << embeddedTex->mFilename.C_Str() << ")" << std::endl;
-                    
-                    // Carica i dati usando stb_image
-                    stbi_set_flip_vertically_on_load(true);
-                    data = stbi_load_from_memory(
+                    // Texture compressa
+                    contentHash = generateTextureHash(
                         reinterpret_cast<const unsigned char*>(embeddedTex->pcData),
-                        embeddedTex->mWidth,
-                        &width, &height, &channels, 0);
+                        embeddedTex->mWidth
+                    );
+                } else {
+                    // Texture raw
+                    size_t dataSize = embeddedTex->mWidth * embeddedTex->mHeight * 4;
+                    contentHash = generateTextureHash(
+                        reinterpret_cast<const unsigned char*>(embeddedTex->pcData),
+                        dataSize
+                    );
+                }
+                
+                std::cout << "  Chiave cache texture (hash content): " << contentHash << std::endl;
+                
+                // Controlla se esiste già nella cache
+                if (textureCache.find(contentHash) != textureCache.end()) {
+                    texture.id = textureCache[contentHash];
+                    textureLoaded = true;
+                    std::cout << "  Texture embedded trovata nella cache: " << texture.id << std::endl;
+                } else {
+                    // Carica la texture embedded
+                    unsigned int textureID;
+                    glGenTextures(1, &textureID);
+                    glBindTexture(GL_TEXTURE_2D, textureID);
                     
-                    if (data) {
-                        if (channels == 1) format = GL_RED;
-                        else if (channels == 3) format = GL_RGB;
-                        else if (channels == 4) format = GL_RGBA;
-                        else format = GL_RGB;
+                    int width, height, channels;
+                    unsigned char* data = nullptr;
+                    
+                    if (embeddedTex->mHeight == 0) {
+                        // Texture compressa
+                        std::cout << "  Texture embedded compressa (formato: " << embeddedTex->achFormatHint << ")" << std::endl;
                         
-                        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+                        stbi_set_flip_vertically_on_load(true);
+                        data = stbi_load_from_memory(
+                            reinterpret_cast<const unsigned char*>(embeddedTex->pcData),
+                            embeddedTex->mWidth,
+                            &width, &height, &channels, 0);
+                        
+                        if (data) {
+                            GLenum format = (channels == 1) ? GL_RED : (channels == 3) ? GL_RGB : GL_RGBA;
+                            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+                            glGenerateMipmap(GL_TEXTURE_2D);
+                            
+                            std::cout << "  Texture embedded caricata: " << width << "x" << height << ", " << channels << " canali" << std::endl;
+                            stbi_image_free(data);
+                        }
+                    } else {
+                        // Texture raw
+                        width = embeddedTex->mWidth;
+                        height = embeddedTex->mHeight;
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, embeddedTex->pcData);
                         glGenerateMipmap(GL_TEXTURE_2D);
                         
-                        std::cout << "  Texture embedded caricata: " << width << "x" << height << ", " << channels << " canali" << std::endl;
-                        
-                        stbi_image_free(data);
+                        std::cout << "  Texture embedded raw caricata: " << width << "x" << height << std::endl;
                     }
-                }
-                else {
-                    // Texture non compressa (raw data)
-                    width = embeddedTex->mWidth;
-                    height = embeddedTex->mHeight;
                     
-                    // Assume formato RGBA per texture raw (non compressa)
-                    format = GL_RGBA;
-                    glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, embeddedTex->pcData);
-                    glGenerateMipmap(GL_TEXTURE_2D);
+                    // Parametri texture
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
                     
-                    std::cout << "  Texture embedded raw caricata: " << width << "x" << height << std::endl;
+                    texture.id = textureID;
+                    textureCache[contentHash] = textureID;  // USA HASH INVECE DI PATH
+                    textureLoaded = true;
+                    
+                    std::cout << "  Texture caricata e cached con hash: " << contentHash << " (ID: " << textureID << ")" << std::endl;
                 }
+            } else {
+                std::cerr << "  ERRORE: Impossibile accedere alla texture embedded indice " << textureIndex << std::endl;
                 
-                // Parametri texture
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                
-                texture.id = textureID;
-                textureCache[uniqueKey] = textureID;
-                textureLoaded = true;
-            }
-            else {
-                // Creazione di una texture colorata sostitutiva come ultima risorsa
+                // Fallback: crea texture colore
                 aiColor4D color(1.0f, 1.0f, 1.0f, 1.0f);
-                
-                // Prova a ottenere il colore diffuso dal materiale
-                if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
-                    std::cout << "  Usando colore diffuso dal materiale: (" 
-                              << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
-                }
-                
+                mat->Get(AI_MATKEY_COLOR_DIFFUSE, color);
                 texture.id = TextureManager::getInstance().createColorTexture(
                     glm::vec4(color.r, color.g, color.b, color.a));
-                
-                std::cout << "  Creata texture colorata sostitutiva per texture embedded: " << texture.id << std::endl;
-                
-                textureCache[uniqueKey] = texture.id;
                 textureLoaded = true;
             }
         }
         
-        // Se non è una texture embedded o non è stata caricata, prova i percorsi nel filesystem
+        // Gestione texture da filesystem (esistente)
         if (!textureLoaded) {
-            // Prova diverse possibili posizioni per la texture
             std::vector<std::string> possiblePaths;
-            
-            // 1. Percorso completo come specificato
             possiblePaths.push_back(str.C_Str());
-            
-            // 2. Relativo alla directory del modello
             possiblePaths.push_back(directory + "/" + str.C_Str());
             
-            // 3. Solo il nome del file nella directory del modello
             std::filesystem::path texPath(str.C_Str());
             possiblePaths.push_back(directory + "/" + texPath.filename().string());
-            
-            // 4. Cartelle texture/textures nella directory del modello
             possiblePaths.push_back(directory + "/textures/" + texPath.filename().string());
             possiblePaths.push_back(directory + "/texture/" + texPath.filename().string());
             
-            // Prova tutti i percorsi possibili
             for (const auto& tryPath : possiblePaths) {
-                std::cout << "  Tentativo di caricamento da: " << tryPath << std::endl;
-                
                 if (std::filesystem::exists(tryPath)) {
                     texture.id = loadTexture(tryPath);
                     if (texture.id != 0) {
-                        std::cout << "  Texture caricata con successo da " << tryPath << " (ID: " << texture.id << ")" << std::endl;
+                        std::cout << "  Texture caricata da filesystem: " << tryPath << " (ID: " << texture.id << ")" << std::endl;
                         texture.path = tryPath;
                         textureLoaded = true;
                         break;
@@ -829,17 +972,16 @@ std::vector<TextureData> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTe
             }
         }
         
+        // Fallback finale
         if (!textureLoaded) {
-            // Se non abbiamo trovato texture, prova a recuperare il colore del materiale
             aiColor4D color(1.0f, 1.0f, 1.0f, 1.0f);
             if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
-                std::cout << "  ATTENZIONE: Usando colore del materiale: (" 
+                std::cout << "  Usando colore materiale come fallback: (" 
                           << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
                 texture.id = TextureManager::getInstance().createColorTexture(
                     glm::vec4(color.r, color.g, color.b, color.a));
-            }
-            else {
-                std::cout << "  ATTENZIONE: Impossibile trovare la texture! Uso texture di default" << std::endl;
+            } else {
+                std::cout << "  Usando texture default" << std::endl;
                 texture.id = TextureManager::getInstance().getDefaultTexture();
             }
         }
@@ -847,12 +989,11 @@ std::vector<TextureData> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTe
         textures.push_back(texture);
     }
     
-    // Se non ci sono texture associate ma c'è un colore diffuso nel materiale
+    // Se non ci sono texture, crea una dal colore diffuso
     if (textures.empty()) {
         aiColor4D color(1.0f, 1.0f, 1.0f, 1.0f);
         if (mat->Get(AI_MATKEY_COLOR_DIFFUSE, color) == AI_SUCCESS) {
-            std::cout << "  Nessuna texture trovata, uso colore del materiale: (" 
-                    << color.r << ", " << color.g << ", " << color.b << ")" << std::endl;
+            std::cout << "  Nessuna texture trovata, creo texture da colore materiale" << std::endl;
             
             TextureData colorTexture;
             colorTexture.type = typeName;
@@ -868,57 +1009,64 @@ std::vector<TextureData> ModelLoader::loadMaterialTextures(aiMaterial* mat, aiTe
 }
 
 void ModelLoader::normalizeModel(std::shared_ptr<ImportedModel> model) {
-    glm::vec3 minAABB(std::numeric_limits<float>::max());
-    glm::vec3 maxAABB(std::numeric_limits<float>::lowest());
-
-    // Ottieni un riferimento non-const alle mesh per poterle modificare
     auto& meshes = const_cast<std::vector<MeshData>&>(model->getMeshes());
     if (meshes.empty()) {
-        return; // Nessun dato da normalizzare
+        return;
     }
 
-    // 1. Calcola il Bounding Box (AABB) complessivo
+    // Calcola AABB globale per TUTTE le mesh insieme
+    glm::vec3 globalMinAABB(std::numeric_limits<float>::max());
+    glm::vec3 globalMaxAABB(std::numeric_limits<float>::lowest());
+
     for (const auto& mesh : meshes) {
         for (size_t i = 0; i < mesh.vertices.size(); i += 3) {
-            minAABB.x = std::min(minAABB.x, mesh.vertices[i]);
-            minAABB.y = std::min(minAABB.y, mesh.vertices[i + 1]);
-            minAABB.z = std::min(minAABB.z, mesh.vertices[i + 2]);
-            maxAABB.x = std::max(maxAABB.x, mesh.vertices[i]);
-            maxAABB.y = std::max(maxAABB.y, mesh.vertices[i + 1]);
-            maxAABB.z = std::max(maxAABB.z, mesh.vertices[i + 2]);
+            globalMinAABB.x = std::min(globalMinAABB.x, mesh.vertices[i]);
+            globalMinAABB.y = std::min(globalMinAABB.y, mesh.vertices[i + 1]);
+            globalMinAABB.z = std::min(globalMinAABB.z, mesh.vertices[i + 2]);
+            globalMaxAABB.x = std::max(globalMaxAABB.x, mesh.vertices[i]);
+            globalMaxAABB.y = std::max(globalMaxAABB.y, mesh.vertices[i + 1]);
+            globalMaxAABB.z = std::max(globalMaxAABB.z, mesh.vertices[i + 2]);
         }
     }
 
-    // 2. Calcola il centro e il fattore di scala
-    glm::vec3 center = (minAABB + maxAABB) / 2.0f;
-    glm::vec3 size = maxAABB - minAABB;
-    float maxDim = std::max({ size.x, size.y, size.z });
+    // Calcola il centro e il fattore di scala GLOBALE
+    glm::vec3 globalCenter = (globalMinAABB + globalMaxAABB) / 2.0f;
+    glm::vec3 globalSize = globalMaxAABB - globalMinAABB;
+    float maxDim = std::max({ globalSize.x, globalSize.y, globalSize.z });
     
-    // Evita divisione per zero se il modello è un punto
     if (maxDim < 1e-6) {
         return;
     }
 
-    float scaleFactor = 2.0f / maxDim; // Normalizza a una dimensione di 2 unità
+    float globalScaleFactor = 2.0f / maxDim;
 
-    // 3. Applica la trasformazione a tutti i vertici
+    // Salva i dati di normalizzazione nel modello
+    model->setNormalizationCenter(globalCenter);
+    model->setNormalizationScale(globalScaleFactor);
+
+    std::cout << "Normalizzazione globale:" << std::endl;
+    std::cout << "  Centro: (" << globalCenter.x << ", " << globalCenter.y << ", " << globalCenter.z << ")" << std::endl;
+    std::cout << "  Scala: " << globalScaleFactor << std::endl;
+    std::cout << "  AABB originale: " << globalSize.x << " x " << globalSize.y << " x " << globalSize.z << std::endl;
+
+    // Applica la stessa trasformazione a TUTTE le mesh
     for (auto& mesh : meshes) {
         for (size_t i = 0; i < mesh.vertices.size(); i += 3) {
-            // Centra il vertice
-            mesh.vertices[i] -= center.x;
-            mesh.vertices[i + 1] -= center.y;
-            mesh.vertices[i + 2] -= center.z;
+            // Centra
+            mesh.vertices[i] -= globalCenter.x;
+            mesh.vertices[i + 1] -= globalCenter.y;
+            mesh.vertices[i + 2] -= globalCenter.z;
 
-            // Scala il vertice
-            mesh.vertices[i] *= scaleFactor;
-            mesh.vertices[i + 1] *= scaleFactor;
-            mesh.vertices[i + 2] *= scaleFactor;
+            // Scala
+            mesh.vertices[i] *= globalScaleFactor;
+            mesh.vertices[i + 1] *= globalScaleFactor;
+            mesh.vertices[i + 2] *= globalScaleFactor;
         }
     }
 }
 
 void ImportedModel::setupVertexAttributes(){
-    glBindVertexArray(VAO);
+    glBindVertexArray(this->getVAO());
 
     // Posizione
     glEnableVertexAttribArray(0);
@@ -1184,4 +1332,291 @@ bool ModelLoader::replaceModelTexture(std::shared_ptr<Model> model, const std::s
     
     std::cout << "Texture del modello sostituita con successo (ID: " << newTextureID << ")" << std::endl;
     return true;
+}
+
+bool ModelLoader::openModelFileAdvanced(
+    ModelManager& modelManager,
+    SceneManager& sceneManager,
+    const glm::vec3& cameraPos,
+    const glm::vec3& cameraTarget,
+    bool& objectSelected,
+    bool& showSelectedModelPanel,
+    LoadMode mode,
+    ProgressCallback progressCallback) {
+
+    // Salva callback
+    s_progressCallback = progressCallback;
+
+#ifdef _WIN32
+    OPENFILENAME ofn;
+    char szFile[260] = { 0 };
+
+    ZeroMemory(&ofn, sizeof(ofn));
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = glfwGetWin32Window(glfwGetCurrentContext());
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = "3D Models\0*.obj;*.fbx;*.dae;*.3ds;*.gltf;*.glb\0All Files\0*.*\0";
+    ofn.nFilterIndex = 1;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    if (!GetOpenFileName(&ofn)) {
+        s_progressCallback = nullptr;
+        return false;
+    }
+
+    std::string filePath = ofn.lpstrFile;
+    
+    // Inizia il dialog PRIMA di qualsiasi operazione
+    reportProgress(0.0f, "Initializing...");
+    
+    // Forza un frame render per mostrare il dialog
+    if (progressCallback) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    try {
+        reportProgress(0.1f, "Parsing file format...");
+        std::string baseName = std::filesystem::path(filePath).stem().string();
+
+        reportProgress(0.2f, "Loading model data...");
+        
+        // Stima dimensione file per progress più preciso
+        std::filesystem::path p(filePath);
+        if (std::filesystem::exists(p)) {
+            auto fileSize = std::filesystem::file_size(p);
+            std::cout << "File size: " << fileSize << " bytes" << std::endl;
+        }
+        
+        auto loadedModel = loadModel(filePath);
+
+        if (!loadedModel) {
+            reportProgress(1.0f, "Error loading model!");
+            s_progressCallback = nullptr;
+            return false;
+        }
+
+        reportProgress(0.6f, "Processing meshes...");
+
+        size_t meshCount = loadedModel->getMeshCount();
+        std::cout << "Modello caricato con " << meshCount << " mesh" << std::endl;
+
+        reportProgress(0.7f, "Calculating spawn position...");
+        glm::vec3 baseSpawnPos = sceneManager.findValidSpawnPosition(
+            cameraPos, cameraTarget, 1.0f, 1.0f);
+
+        std::shared_ptr<SceneObject> firstObject;
+
+        switch (mode) {
+        case LoadMode::SINGLE_OBJECT: {
+            reportProgress(0.8f, "Creating single object...");
+            
+            // Registra E inizializza il modello
+            modelManager.registerModel(loadedModel);
+            loadedModel->initialize();
+            
+            // Verifica che l'inizializzazione sia andata a buon fine
+            if (!loadedModel->isInitialized()) {
+                std::cerr << "ERRORE: Inizializzazione modello fallita!" << std::endl;
+                reportProgress(1.0f, "Initialization failed!");
+                s_progressCallback = nullptr;
+                return false;
+            }
+
+            reportProgress(0.9f, "Adding to scene...");
+            auto newObj = sceneManager.addObject(baseName, baseSpawnPos);
+            if (newObj) {
+                firstObject = newObj;
+                std::cout << "Oggetto singolo creato: " << baseName << std::endl;
+            } else {
+                std::cerr << "ERRORE: Creazione SceneObject fallita!" << std::endl;
+            }
+            break;
+        }
+
+        case LoadMode::SEPARATE_MESHES: {
+            reportProgress(0.8f, "Creating separate mesh objects...");
+            
+            // Passa il progress per mesh separate
+            float progressPerMesh = 0.15f / std::max(1.0f, static_cast<float>(meshCount));
+            
+            createSeparateMeshObjects(loadedModel, modelManager, sceneManager,
+                baseSpawnPos, firstObject);
+            
+            reportProgress(0.95f, "Finalizing mesh objects...");
+            break;
+        }
+
+        case LoadMode::BY_MATERIAL: {
+            reportProgress(0.8f, "Grouping by material...");
+            // TODO: implementazione futura
+            modelManager.registerModel(loadedModel);
+            loadedModel->initialize();
+            auto newObj = sceneManager.addObject(baseName, baseSpawnPos);
+            if (newObj) firstObject = newObj;
+            break;
+        }
+        }
+
+        reportProgress(0.98f, "Finalizing...");
+
+        if (firstObject) {
+            sceneManager.selectObject(firstObject->getId());
+            objectSelected = true;
+            showSelectedModelPanel = true;
+        } else {
+            std::cerr << "ATTENZIONE: Nessun oggetto creato!" << std::endl;
+        }
+
+        reportProgress(1.0f, "Complete!");
+
+        s_progressCallback = nullptr;
+        return true;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Eccezione durante caricamento: " << e.what() << std::endl;
+        reportProgress(1.0f, std::string("Error: ") + e.what());
+        s_progressCallback = nullptr;
+        return false;
+    }
+#else
+    s_progressCallback = nullptr;
+    return false;
+#endif
+}
+
+void ModelLoader::createSeparateMeshObjects(
+    std::shared_ptr<ImportedModel> model,
+    ModelManager& modelManager,
+    SceneManager& sceneManager,
+    const glm::vec3& basePosition,
+    std::shared_ptr<SceneObject>& firstObject) {
+    
+    size_t meshCount = model->getMeshCount();
+    std::string baseName = model->getName();
+    
+    std::cout << "=== Creazione " << meshCount << " oggetti separati ===" << std::endl;
+    
+    const auto& meshes = model->getMeshes();
+    const auto& textures = model->getTextures();
+    
+    // Estrai parametri di normalizzazione dal modello originale
+    glm::vec3 normCenter = model->getNormalizationCenter();
+    float normScale = model->getNormalizationScale();
+    
+    std::cout << "  Parametri normalizzazione ereditati:" << std::endl;
+    std::cout << "    Centro: (" << normCenter.x << ", " << normCenter.y << ", " << normCenter.z << ")" << std::endl;
+    std::cout << "    Scala: " << normScale << std::endl;
+    
+    for (size_t i = 0; i < meshCount; ++i) {
+        std::string meshName = model->getMeshName(i);
+        std::string uniqueModelName = baseName + "_mesh_" + std::to_string(i);
+        
+        auto singleMeshModel = std::make_shared<ImportedModel>(uniqueModelName);
+        
+        // Copia la mesh corrente
+        if (i < meshes.size()) {
+            singleMeshModel->addMesh(meshes[i]);
+            std::cout << "  Mesh " << i << ": " << meshes[i].vertices.size() / 3 << " vertices" << std::endl;
+        }
+        
+        // Eredita i parametri di normalizzazione
+        singleMeshModel->setNormalizationCenter(normCenter);
+        singleMeshModel->setNormalizationScale(normScale);
+        
+        // Gestione texture unificata
+        GLuint meshTextureID = 0;
+        std::string materialName = meshes[i].materialName;
+        
+        // Cerca texture diffuse per questa mesh
+        bool textureFound = false;
+        for (const auto& tex : textures) {
+            if (tex.type == "texture_diffuse") {
+                // Verifica che la texture sia valida
+                if (glIsTexture(tex.id)) {
+                    meshTextureID = tex.id;
+                    singleMeshModel->addTexture(tex);
+                    textureFound = true;
+                    std::cout << "    Texture diffuse ID " << tex.id 
+                              << " associata (materiale: " << materialName << ")" << std::endl;
+                    break;
+                } else {
+                    std::cerr << "    ATTENZIONE: Texture ID " << tex.id << " non valida!" << std::endl;
+                }
+            }
+        }
+        
+        // Strategia 2: Se non troviamo texture diffuse, usa la prima disponibile
+        if (!textureFound && !textures.empty()) {
+            for (const auto& tex : textures) {
+                if (glIsTexture(tex.id)) {
+                    meshTextureID = tex.id;
+                    singleMeshModel->addTexture(tex);
+                    textureFound = true;
+                    std::cout << "    Usando texture generica ID " << tex.id << std::endl;
+                    break;
+                }
+            }
+        }
+        
+        // FIX CRITICO 3: Imposta la texture sul modello (SEMPRE, anche se è 0)
+        singleMeshModel->setTexture(meshTextureID);
+        
+        if (meshTextureID != 0) {
+            std::cout << "    Texture principale impostata: " << meshTextureID << std::endl;
+            
+            // VERIFICA: Controlla che la texture sia davvero impostata
+            if (singleMeshModel->hasTexture() && singleMeshModel->getTextureID() == meshTextureID) {
+                std::cout << "    Verifica texture OK" << std::endl;
+            } else {
+                std::cerr << "    ERRORE: Texture non impostata correttamente!" << std::endl;
+                std::cerr << "    hasTexture: " << singleMeshModel->hasTexture() << std::endl;
+                std::cerr << "    getTextureID: " << singleMeshModel->getTextureID() << std::endl;
+            }
+        } else {
+            std::cout << "    ATTENZIONE: Nessuna texture disponibile per mesh " << i << std::endl;
+        }
+        
+        singleMeshModel->setDirectory(model->getPath());
+        
+        // Registra e inizializza
+        modelManager.registerModel(singleMeshModel);
+        singleMeshModel->initialize();
+        
+        if (!singleMeshModel->isInitialized()) {
+            std::cerr << "ERRORE: Inizializzazione mesh " << i << " fallita!" << std::endl;
+            continue;
+        }
+        
+        // Calcola offset posizione
+        glm::vec3 offset(i * 0.2f, 0.0f, 0.0f);
+        glm::vec3 spawnPos = basePosition + offset;
+        
+        // Crea SceneObject
+        std::string objName = baseName + "_" + meshName;
+        auto newObj = sceneManager.addObject(uniqueModelName, spawnPos);
+        
+        if (newObj) {
+            // Verifica finale che la texture sia accessibile
+            auto objModel = newObj->getModel();
+            bool finalTextureCheck = objModel->hasTexture() && objModel->getTextureID() != 0;
+            
+            if (i == 0) {
+                firstObject = newObj;
+            }
+            
+            std::cout << "  Creato: " << objName << " @ (" 
+                      << spawnPos.x << ", " << spawnPos.y << ", " << spawnPos.z << ")"
+                      << " [Texture: " << (finalTextureCheck ? "OK" : "MISSING") << "]";
+            
+            if (finalTextureCheck) {
+                std::cout << " (ID: " << objModel->getTextureID() << ")";
+            }
+            std::cout << std::endl;
+        } else {
+            std::cerr << "  ERRORE: Creazione SceneObject fallita per mesh " << i << std::endl;
+        }
+    }
+    
+    std::cout << "=== Completata creazione oggetti separati ===" << std::endl;
 }

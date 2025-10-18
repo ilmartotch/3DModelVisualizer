@@ -187,39 +187,50 @@ glm::vec3 PickingBuffer::readPixel(int x, int y) {
         return glm::vec3(0.0f);
     }
 
-    // Inverte la coordinata Y per adattarsi alle coordinate OpenGL
+    // Inverte la coordinata Y
     y = m_height - y - 1;
 
-    // Verifica che le coordinate siano all'interno del framebuffer
+    // Verifica limiti
     if (x < 0 || x >= m_width || y < 0 || y >= m_height) {
-        std::cerr << "Coordinate fuori dai limiti: (" << x << ", " << y << ") per buffer "
-            << m_width << "x" << m_height << std::endl;
         return glm::vec3(0.0f);
     }
 
-    // Salva il framebuffer corrente
+    // Salva TUTTI gli stati necessari
     GLint currentFramebuffer;
+    GLint currentReadBuffer;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &currentFramebuffer);
+    glGetIntegerv(GL_READ_BUFFER, &currentReadBuffer);
 
     // Bind del framebuffer di picking
     glBindFramebuffer(GL_FRAMEBUFFER, m_framebufferId);
-
-    // Specifica che vogliamo leggere dal secondo attachment (ID buffer)
-    glReadBuffer(GL_COLOR_ATTACHMENT1);
-
-    // Legge il pixel
-    float pixelData[4];
-    glReadPixels(x, y, 1, 1, GL_RGBA, GL_FLOAT, pixelData);
-
-    // Controlla errori OpenGL
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::cerr << "Errore OpenGL durante la lettura del pixel: " << error << std::endl;
+    
+    // Verifica che il framebuffer sia completo
+    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    if (status != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Errore: Framebuffer non completo! Status: " << status << std::endl;
+        glBindFramebuffer(GL_FRAMEBUFFER, currentFramebuffer);
+        return glm::vec3(0.0f);
     }
 
-    // Ripristina il framebuffer precedente
+    // Specifica read buffer
+    glReadBuffer(GL_COLOR_ATTACHMENT1);
+
+    // Pulisci errori precedenti
+    while (glGetError() != GL_NO_ERROR);
+
+    // Legge il pixel
+    float pixelData[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    glReadPixels(x, y, 1, 1, GL_RGBA, GL_FLOAT, pixelData);
+
+    // Controlla errori
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        std::cerr << "Errore OpenGL durante readPixel: " << error << std::endl;
+    }
+
+    // Ripristina TUTTI gli stati
+    glReadBuffer(currentReadBuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, currentFramebuffer);
 
-    // Restituisce i primi 3 componenti come vettore (RGB)
     return glm::vec3(pixelData[0], pixelData[1], pixelData[2]);
 }

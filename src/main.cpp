@@ -30,6 +30,10 @@
 #include "../Include/ModelLoader.h"
 #include "Include/TextureManager.h"
 
+#include <thread>
+#include <chrono>
+#include <functional>
+
 // Aggiungi variabili globali per ImGuizmo
 static ImGuizmo::OPERATION currentGizmoOperation = ImGuizmo::UNIVERSAL;
 static ImGuizmo::MODE currentGizmoMode = ImGuizmo::WORLD;
@@ -55,9 +59,10 @@ void resetCameraView();
 bool isPositionOccupied(const glm::vec3& position, float radius, const SceneManager& sceneManager);
 glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& sceneManager);
 void processKeyboardShortcuts(GLFWwindow* window);
-void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection); // Nuova funzione
+void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection);
 void openModelFile();
 void openImageFile();
+void renderLoadingDialog();
 
 // Variabili window
 int windoWidth = 800;
@@ -105,6 +110,64 @@ struct ErrorDialog
 	std::string details = "";
 };
 static ErrorDialog errorDialog;
+
+// Dialog di caricamento
+struct LoadingDialog {
+    bool show = false;
+    std::string fileName = "";
+    float progress = 0.0f;        // 0.0 - 1.0
+    std::string statusMessage = "Loading...";
+    float elapsedTime = 0.0f;
+    float startTime = 0.0f;
+    bool isComplete = false;
+    bool hasError = false;
+    std::string errorMessage = "";
+    
+    // Animazione spinner
+    float spinnerAngle = 0.0f;
+    
+    void reset() {
+        show = false;
+        fileName = "";
+        progress = 0.0f;
+        statusMessage = "Loading...";
+        elapsedTime = 0.0f;
+        startTime = 0.0f;
+        isComplete = false;
+        hasError = false;
+        errorMessage = "";
+        spinnerAngle = 0.0f;
+    }
+    
+    void start(const std::string& file) {
+        reset();
+        show = true;
+        fileName = file;
+        startTime = static_cast<float>(glfwGetTime());
+    }
+    
+    void updateProgress(float prog, const std::string& message = "") {
+        progress = std::clamp(prog, 0.0f, 1.0f);
+        if (!message.empty()) {
+            statusMessage = message;
+        }
+        elapsedTime = static_cast<float>(glfwGetTime()) - startTime;
+    }
+    
+    void complete() {
+        progress = 1.0f;
+        statusMessage = "Complete!";
+        isComplete = true;
+    }
+    
+    void error(const std::string& msg) {
+        hasError = true;
+        errorMessage = msg;
+        statusMessage = "Error!";
+    }
+};
+
+static LoadingDialog loadingDialog;
 
 std::vector<unsigned int> multiSelectedObjectIds;
 bool multiSelectionMode = false;
@@ -518,11 +581,48 @@ void renderSceneControlPanel() {
         
         // Aggiungi pulsanti per caricare modelli esterni
         if (ImGui::Button("Load 3D Model", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
-            openModelFile();
+            // Mostra popup per scegliere modalità
+            ImGui::OpenPopup("Choose Load Mode");
         }
         
         if (ImGui::Button("Load Image", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
             openImageFile();
+        }
+        
+        // Dialog popup per la modalità di caricamento modelli
+        if (ImGui::BeginPopupModal("Choose Load Mode", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("How do you want to load this model?");
+            ImGui::Separator();
+            
+            if (ImGui::Button("Single Object (Default)", ImVec2(250, 0))) {
+                ModelLoader::openModelFileAdvanced(
+                    modelManager, sceneManager,
+                    mouseControl.camPos, mouseControl.cameraTarget,
+                    objectSelected, showSelectedModelPanel,
+                    ModelLoader::LoadMode::SINGLE_OBJECT);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::TextWrapped("   All meshes in one selectable object");
+            
+            ImGui::Spacing();
+            
+            if (ImGui::Button("Separate Meshes", ImVec2(250, 0))) {
+                ModelLoader::openModelFileAdvanced(
+                    modelManager, sceneManager,
+                    mouseControl.camPos, mouseControl.cameraTarget,
+                    objectSelected, showSelectedModelPanel,
+                    ModelLoader::LoadMode::SEPARATE_MESHES);
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::TextWrapped("   Each mesh becomes a separate object");
+            
+            ImGui::Separator();
+            
+            if (ImGui::Button("Cancel", ImVec2(250, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            
+            ImGui::EndPopup();
         }
 
         ImGui::Separator();
@@ -742,16 +842,80 @@ void openTextureFile() {
 }
 
 void openModelFile() {
+    // Timing preciso per loading dialog
+    auto loadStartTime = std::chrono::steady_clock::now();
+    bool dialogShown = false;
+    
     glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
         mouseControl.camPos, 
         mouseControl.cameraTarget, 
-        0.5f,
-        1.0f 
+        0.5f, 1.0f 
     );
     
-    ModelLoader::openModelFile(modelManager, sceneManager,
-        mouseControl.camPos, spawnPos,
-        objectSelected, showSelectedModelPanel);
+    // Prepara il callback per progress updates CON TIMING
+    auto progressCallback = [&dialogShown, &loadStartTime](float progress, const std::string& message) {
+        auto elapsed = std::chrono::steady_clock::now() - loadStartTime;
+        auto elapsedSeconds = std::chrono::duration<float>(elapsed).count();
+        
+        // Mostra dialog solo se passano più di 2 secondi
+        if (elapsedSeconds > 2.0f && !dialogShown) {
+            loadingDialog.start("Loading model...");
+            dialogShown = true;
+        }
+        
+        if (dialogShown) {
+            loadingDialog.updateProgress(progress, message);
+            
+            // Forza rendering durante il caricamento
+            glfwPollEvents();
+            
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+            
+            renderLoadingDialog();
+            
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            glfwSwapBuffers(glfwGetCurrentContext());
+        }
+    };
+    
+    bool success = ModelLoader::openModelFileAdvanced(
+        modelManager, sceneManager,
+        mouseControl.camPos, mouseControl.cameraTarget,
+        objectSelected, showSelectedModelPanel,
+        ModelLoader::LoadMode::SEPARATE_MESHES,
+        progressCallback
+    );
+    
+    auto totalElapsed = std::chrono::steady_clock::now() - loadStartTime;
+    auto totalSeconds = std::chrono::duration<float>(totalElapsed).count();
+    
+    if (success) {
+        if (dialogShown) {
+            // Mostra informazioni dettagliate del caricamento
+            auto loadedModel = modelManager.getModel(
+                std::filesystem::path(/* file path */).stem().string());
+            
+            std::string successMessage = "Model loaded successfully!\n\n";
+            successMessage += "Time: " + std::to_string(totalSeconds) + " seconds\n";
+            // TODO: Aggiungi dettagli mesh e texture
+            
+            loadingDialog.complete();
+            loadingDialog.statusMessage = successMessage;
+            
+            // Auto-chiudi dopo 3 secondi per dare tempo di leggere
+            std::thread([]{
+                std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+                loadingDialog.reset();
+            }).detach();
+        }
+    } else {
+        if (dialogShown) {
+            loadingDialog.error("Failed to load model");
+        } else if (totalSeconds < 0.5f) {}
+    }
 }
 
 void openImageFile() {
@@ -764,10 +928,8 @@ void openImageFile() {
     );
     
     std::string errorMessage;
-    ModelLoader loader;
     
-    // Chiama la funzione openImageFile di ModelLoader
-    bool success = loader.openImageFile(
+    bool success = ModelLoader::openImageFile(
         modelManager, 
         sceneManager,
         mouseControl.camPos, 
@@ -1447,9 +1609,8 @@ int main() {
                 if (ImGui::Button("Close", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
                     shoeHelpWindow = false;
                 }
-                if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-                    shoeHelpWindow = false;
-                }
+
+                ImGui::IsKeyPressed(ImGuiKey_Escape);
                 ImGui::End();
             }
         }
@@ -1499,7 +1660,7 @@ int main() {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
-                
+
                 if (ImGui::Button("Delete", ImVec2(buttonWidth, 0))) {
                     // Procedi con l'eliminazione
                     if (sceneManager.getSelectedObjectId() == objectToDeleteId) {
@@ -1515,7 +1676,7 @@ int main() {
                     showDeleteConfirmation = false;
                     ImGui::CloseCurrentPopup();
                 }
-                
+
                 ImGui::PopStyleColor(3);
                 
                 // Permette anche la chiusura con Esc
@@ -1572,7 +1733,7 @@ int main() {
                 
                 // Pulsante OK centrato
                 float buttonWidth = 120.0f;
-                float windowWidth = ImGui::GetWindowSize().x;
+                float windowWidth = ImGui::GetContentRegionAvail().x;
                 ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
                 
                 if (ImGui::Button("OK", ImVec2(buttonWidth, 0)) || 
@@ -1702,6 +1863,9 @@ int main() {
             ImGui::PopStyleVar();
         }
 
+        // Renderizza il dialog di caricamento
+        renderLoadingDialog();
+
         ImGui::Render();
 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -1771,4 +1935,172 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
         sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
         sceneManager.updateObjectScale(selectedObj->getId(), scale);
     }
+}
+
+// Renderizza il dialog di caricamento
+void renderLoadingDialog() {
+    if (!loadingDialog.show) return;
+    
+    // Aggiorna animazione spinner
+    loadingDialog.spinnerAngle += ImGui::GetIO().DeltaTime * 360.0f;
+    if (loadingDialog.spinnerAngle > 360.0f) {
+        loadingDialog.spinnerAngle -= 360.0f;
+    }
+    
+    // Centra il dialog
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(500, 0), ImGuiCond_Always);
+    
+    // Styling
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+    
+    // Colore titolo in base allo stato
+    if (loadingDialog.hasError) {
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+    } else if (loadingDialog.isComplete) {
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.6f, 0.9f, 1.0f));
+    }
+    
+    // Dialog non chiudibile durante il caricamento
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | 
+                             ImGuiWindowFlags_NoMove | 
+                             ImGuiWindowFlags_NoCollapse;
+    
+    if (!loadingDialog.isComplete && !loadingDialog.hasError) {
+        flags |= ImGuiWindowFlags_NoSavedSettings;
+    }
+    
+    bool dialogOpen = true;
+    if (ImGui::Begin("Loading Model", &dialogOpen, flags)) {
+        
+        // Nome file
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "File:");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", std::filesystem::path(loadingDialog.fileName).filename().string().c_str());
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        if (loadingDialog.hasError) {
+            // === STATO ERRORE ===
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERROR");
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", loadingDialog.errorMessage.c_str());
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            float buttonWidth = 120.0f;
+            float windowWidth = ImGui::GetContentRegionAvail().x;
+            ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
+            
+            if (ImGui::Button("Close", ImVec2(buttonWidth, 30))) {
+                loadingDialog.reset();
+            }
+            
+        } else if (loadingDialog.isComplete) {
+            // === STATO COMPLETATO ===
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Loading Complete!");
+            
+            ImGui::Spacing();
+            ImGui::Text("Loaded in %.2f seconds", loadingDialog.elapsedTime);
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            float buttonWidth = 120.0f;
+            float windowWidth = ImGui::GetContentRegionAvail().x;
+            ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
+            
+            if (ImGui::Button("OK", ImVec2(buttonWidth, 30))) {
+                loadingDialog.reset();
+            }
+            
+        } else {
+            // === STATO CARICAMENTO ===
+            
+            // Spinner animato
+            ImDrawList* draw_list = ImGui::GetWindowDrawList();
+            ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+            ImVec2 spinnerCenter = ImVec2(
+                cursorPos.x + ImGui::GetContentRegionAvail().x * 0.5f,
+                cursorPos.y + 40
+            );
+            
+            float radius = 20.0f;
+            int segments = 12;
+            float thickness = 3.0f;
+            
+            // Disegna cerchio background
+            draw_list->AddCircle(spinnerCenter, radius, 
+                                ImColor(0.4f, 0.4f, 0.4f, 0.3f), segments, thickness);
+            
+            // Disegna arco animato
+            float angle_rad = glm::radians(loadingDialog.spinnerAngle);
+            constexpr float arc_length = glm::radians(270.0f); // 3/4 di cerchio
+            
+            ImVec2 arc_start = ImVec2(
+                spinnerCenter.x + radius * cosf(angle_rad),
+                spinnerCenter.y + radius * sinf(angle_rad)
+            );
+            
+            draw_list->PathArcTo(spinnerCenter, radius, angle_rad, 
+                               angle_rad + arc_length, segments);
+            draw_list->PathStroke(ImColor(0.2f, 0.6f, 1.0f, 1.0f), 0, thickness);
+            
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 80);
+            
+            // Status message
+            ImGui::TextWrapped("%s", loadingDialog.statusMessage.c_str());
+            
+            ImGui::Spacing();
+            
+            // Progress bar
+            char progressLabel[32];
+            snprintf(progressLabel, sizeof(progressLabel), "%.0f%%", loadingDialog.progress * 100.0f);
+            
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.6f, 1.0f, 1.0f));
+            ImGui::ProgressBar(loadingDialog.progress, ImVec2(-1, 30), progressLabel);
+            ImGui::PopStyleColor();
+            
+            ImGui::Spacing();
+            
+            // Elapsed time
+            ImGui::Text("Elapsed: %.1f s", loadingDialog.elapsedTime);
+            
+            // Pulsante Cancel (opzionale)
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            float buttonWidth = 100.0f;
+            float windowWidth = ImGui::GetContentRegionAvail().x;
+            ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
+            
+            if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
+                // TODO: Implementa cancellazione caricamento
+                loadingDialog.error("Loading cancelled by user");
+            }
+        }
+        
+        ImGui::End();
+    }
+    
+    // Se l'utente chiude manualmente il dialog
+    if (!dialogOpen && (loadingDialog.isComplete || loadingDialog.hasError)) {
+        loadingDialog.reset();
+    }
+    
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
 }

@@ -1,3 +1,5 @@
+#include "../Include/SceneObject.h"
+
 // Nel metodo setOverrideTexture, assicurati di pulire il colore
 void SceneObject::setOverrideTexture(GLuint texID) {
     overrideTextureID = texID;

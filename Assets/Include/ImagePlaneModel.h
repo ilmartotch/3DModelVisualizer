@@ -44,4 +44,9 @@ public:
     int getImageHeight() const { return imageHeight; }
     float getAspectRatio() const { return aspectRatio; }
     bool getHasAlpha() const { return hasAlpha; }
+
+    void setImageSize(int width, int height, bool alpha) {
+        setImageDimensions(width, height);
+        setHasAlpha(alpha);
+    }
 };

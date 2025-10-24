@@ -75,7 +75,7 @@ public:
     virtual void initialize() override;
     virtual void render() override;  // Renderizza tutte le mesh
     virtual void cleanup() override;
-	virtual void setupVertexAttributes() override;
+    virtual void setupVertexAttributes() override;
     
     // Aggiungi mesh al modello
     void addMesh(const MeshData& mesh);
@@ -83,8 +83,8 @@ public:
     void addTexture(const TextureData& texture);
     // Imposta la directory di base
     void setDirectory(const std::string& dir) { directory = dir; }
-	// Imposta il path del modello
-	void setPath(const std::string& modelPath) { path = modelPath; }
+    // Imposta il path del modello
+    void setPath(const std::string& modelPath) { path = modelPath; }
     
     // Getter per i dati del modello
     const std::vector<MeshData>& getMeshes() const { return meshes; }
@@ -92,7 +92,7 @@ public:
 
     std::shared_ptr<Model> clone() const override;
 
-	const std::string& getPath() const { return path; }
+    const std::string& getPath() const { return path; }
 
     // Renderizza solo una mesh specifica (per oggetti separati)
     void renderMesh(size_t meshIndex);
@@ -104,21 +104,10 @@ public:
     std::string getMeshName(size_t index) const;
 
     // Getter/setter per normalizzazione
-    void setNormalizationCenter(const glm::vec3& center) { 
-        normalizationCenter = center; 
-    }
-    
-    void setNormalizationScale(float scale) { 
-        normalizationScale = scale; 
-    }
-    
-    glm::vec3 getNormalizationCenter() const { 
-        return normalizationCenter; 
-    }
-    
-    float getNormalizationScale() const { 
-        return normalizationScale; 
-    }
+    void setNormalizationCenter(const glm::vec3& center) { normalizationCenter = center; }
+    void setNormalizationScale(float scale) { normalizationScale = scale; }
+    glm::vec3 getNormalizationCenter() const { return normalizationCenter; }
+    float getNormalizationScale() const { return normalizationScale; }
 };
 
 class ModelLoader {
@@ -169,10 +158,13 @@ private:
     // Helper per report progresso
     static void reportProgress(float progress, const std::string& message);
 
+    // Propaga trasformazioni nodi
     static void processNode(aiNode* node, const aiScene* scene, 
-                           std::shared_ptr<ImportedModel> model, const std::string& directory);
+                           std::shared_ptr<ImportedModel> model, const std::string& directory,
+                           const aiMatrix4x4& parentTransform);
     
-    static MeshData processMesh(aiMesh* mesh, const aiScene* scene);
+    // Applica trasformazione cumulativa a pos/normali
+    static MeshData processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& transform);
     
     static std::vector<TextureData> loadMaterialTextures(aiMaterial* mat, aiTextureType type, 
         const std::string& typeName, const std::string& directory, 

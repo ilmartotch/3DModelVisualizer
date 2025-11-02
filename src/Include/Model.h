@@ -55,57 +55,36 @@ public:
 
         glBindVertexArray(m_vao);
 
+        auto drawArraysInstanced = [&](GLenum polyMode) {
+            glPolygonMode(GL_FRONT_AND_BACK, polyMode);
+            if (!m_indices.empty()) {
+                glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, 0, instanceCount);
+            } else {
+                // Usa stride corretto (6 senza UV, 8 con UV)
+                GLsizei vertexCount = static_cast<GLsizei>(m_vertices.size() / static_cast<size_t>(getVertexStrideFloats()));
+                glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
+            }
+        };
+
         switch (m_renderMode)
         {
         case Model::RenderMode::SOLID:
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            // Usa glDrawElementsInstanced se il modello ha indici, altrimenti glDrawArraysInstanced
-            if (!m_indices.empty()) {
-                glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, 0, instanceCount);
-            }
-            else {
-                // Calcola il numero di vertici dal buffer dei vertici (assumendo 3 componenti per vertice)
-                GLsizei vertexCount = static_cast<GLsizei>(m_vertices.size() / 6);
-                glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
-            }
+            drawArraysInstanced(GL_FILL);
             break;
 
         case Model::RenderMode::WIREFRAME:
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            if (!m_indices.empty()) {
-                glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, 0, instanceCount);
-            }
-            else {
-                GLsizei vertexCount = static_cast<GLsizei>(m_vertices.size() / 6);
-                glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
-            }
+            drawArraysInstanced(GL_LINE);
             break;
 
         case Model::RenderMode::SOLID_WITH_WIREFRAME:
             // Prima renderizza il solido
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            if (!m_indices.empty()) {
-                glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, 0, instanceCount);
-            }
-            else {
-                GLsizei vertexCount = static_cast<GLsizei>(m_vertices.size() / 6);
-                glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
-            }
+            drawArraysInstanced(GL_FILL);
 
             // Poi renderizza il wireframe con offset per evitare z-fighting
             glEnable(GL_POLYGON_OFFSET_FILL);
             glPolygonOffset(-1.0f, -1.0f);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
             glLineWidth(1.5f);
-
-            if (!m_indices.empty()) {
-                glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(m_indices.size()), GL_UNSIGNED_INT, 0, instanceCount);
-            }
-            else {
-                GLsizei vertexCount = static_cast<GLsizei>(m_vertices.size() / 6);
-                glDrawArraysInstanced(GL_TRIANGLES, 0, vertexCount, instanceCount);
-            }
-
+            drawArraysInstanced(GL_LINE);
             glLineWidth(1.0f);
             glDisable(GL_POLYGON_OFFSET_FILL);
             break;
@@ -123,15 +102,13 @@ public:
         glBindVertexArray(m_vao);
 
         // Configura gli attributi per la matrice modello (location 3-6)
-        // Ogni riga della matrice mat4 occupa un attributo separato
         GLsizei vec4Size = sizeof(glm::vec4);
 
-        // Assumiamo che il VBO delle istanze sia già stato bindato dal manager
         for (int i = 0; i < 4; ++i) {
             glEnableVertexAttribArray(3 + i);
             glVertexAttribPointer(3 + i, 4, GL_FLOAT, GL_FALSE, sizeof(glm::mat4),
                 reinterpret_cast<const void*>(static_cast<uintptr_t>(i * vec4Size)));
-            glVertexAttribDivisor(3 + i, 1);  // Avanza ogni istanza
+            glVertexAttribDivisor(3 + i, 1);
         }
 
         glBindVertexArray(0);
@@ -173,6 +150,15 @@ public:
     bool hasUVCoordinates() const { return hasUVs; }
     void generateProceduralUVs(UVMappingType mappingType = UVMappingType::AUTO);
 
+    void setSourcePath(const std::string& path) { m_sourcePath = path; }
+    std::string getSourcePath() const { return m_sourcePath; }
+    
+    void setTextureSourcePath(const std::string& path) { m_textureSourcePath = path; }
+    std::string getTextureSourcePath() const { return m_textureSourcePath; }
+
+    // Helper NON invasivo: stride in float del layout corrente (6 o 8)
+    inline unsigned int getVertexStrideFloats() const { return hasUVs ? 8u : 6u; }
+
 protected:
     GLuint m_vao;
     GLuint m_vbo;
@@ -187,7 +173,7 @@ protected:
     RenderMode m_renderMode = RenderMode::SOLID;
 
     // Metodo helper per configurare i buffer base del modello
-	virtual void setupBuffers();
+    virtual void setupBuffers();
 
     // Metodo helper per pulire i buffer
     virtual void cleanupBuffers() {
@@ -221,4 +207,7 @@ protected:
     glm::vec2 generateSphericalUV(const glm::vec3& position);
     glm::vec2 generateCylindricalUV(const glm::vec3& position);
     glm::vec2 generateCubicUV(const glm::vec3& position, const glm::vec3& normal);
+
+    std::string m_sourcePath;         // Path originale del modello
+    std::string m_textureSourcePath;  // Path originale texture
 };

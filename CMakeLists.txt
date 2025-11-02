@@ -12,22 +12,36 @@ set(CMAKE_VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
 # src/CMakeLists.txt
 add_executable(App
+  # Main
   src/main.cpp
- "src/Include/Window.h" "src/Source/Window.cpp" 
- "src/Source/Shaders.cpp" "src/Include/Shaders.h" 
- "src/Include/Model.h" "src/Source/Model.cpp" 
- "Assets/Include/PyramidModel.h" "Assets/Source/PyramidModel.cpp" 
- "Assets/Include/CubeModel.h" "Assets/Source/CubeModel.cpp" 
- "Assets/Include/SphereModel.h" "Assets/Source/SphereModel.cpp" 
- "src/Include/Grid.h" "src/Source/Grid.cpp" 
- "src/Include/ModelManager.h" "src/Source/ModelManager.cpp" 
- "src/Include/InstancedModelManager.h" "src/Source/InstancedModelManager.cpp" 
- "src/Source/PickingBuffer.cpp" "src/Include/SceneObject.h" 
- "src/Include/SceneManager.h" "src/Source/SceneManager.cpp"
- "src/Include/ModelLoader.h" "src/Source/ModelLoader.cpp"
- "src/Source/stb_image_impl.cpp"
- "src/Include/TextureManager.h" "src/Source/TextureManager.cpp"
- "Assets/Include/ImagePlaneModel.h" "Assets/Source/ImagePlaneModel.cpp"
+  
+  # Core
+  "src/Include/Window.h" "src/Source/Window.cpp"
+  "src/Include/Shaders.h" "src/Source/Shaders.cpp"
+  "src/Include/Model.h" "src/Source/Model.cpp"
+  "src/Include/Grid.h" "src/Source/Grid.cpp"
+  
+  # Managers
+  "src/Include/ModelManager.h" "src/Source/ModelManager.cpp"
+  "src/Include/InstancedModelManager.h" "src/Source/InstancedModelManager.cpp"
+  "src/Include/SceneManager.h" "src/Source/SceneManager.cpp"
+  "src/Include/ModelLoader.h" "src/Source/ModelLoader.cpp"
+  "src/Include/TextureManager.h" "src/Source/TextureManager.cpp"
+  
+  # Scene Objects
+  "src/Include/SceneObject.h" "src/Source/PickingBuffer.cpp"
+  
+  # Assets - Built-in Models
+  "Assets/Include/PyramidModel.h" "Assets/Source/PyramidModel.cpp"
+  "Assets/Include/CubeModel.h" "Assets/Source/CubeModel.cpp"
+  "Assets/Include/SphereModel.h" "Assets/Source/SphereModel.cpp"
+  "Assets/Include/ImagePlaneModel.h" "Assets/Source/ImagePlaneModel.cpp"
+  
+  # Export
+  "src/Include/AssimpSceneExporter.h" "src/Source/AssimpSceneExporter.cpp"
+  
+  # Utility
+  "src/Source/stb_image_impl.cpp"
 )
 
 # Trova pacchetti con vcpkg
@@ -39,6 +53,7 @@ find_package(OpenGL REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imguizmo CONFIG REQUIRED)
 find_package(assimp REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 target_include_directories(App PRIVATE ${Stb_INCLUDE_DIR})
 
@@ -52,6 +67,7 @@ target_link_libraries(App PRIVATE
   glm::glm
   imguizmo::imguizmo
   assimp::assimp
+  nlohmann_json::nlohmann_json
 )
 
 set(SHADERS_DIR ${CMAKE_SOURCE_DIR}/Shaders)
@@ -70,4 +86,8 @@ target_include_directories(App PRIVATE
 
 target_include_directories(App PRIVATE
   ${CMAKE_SOURCE_DIR}/Shaders
+)
+
+target_include_directories(App PRIVATE
+  ${CMAKE_SOURCE_DIR}/Assets/Include
 )

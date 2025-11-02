@@ -9,6 +9,11 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <cmath>
 #include <vector>
+#include <thread>
+#include <chrono>
+#include <functional>
+#include <sstream>
+#include <iomanip>
 
 // Manager per picking
 #include "Include/PickingBuffer.h"
@@ -29,10 +34,7 @@
 #include "Include/SceneManager.h"
 #include "../Include/ModelLoader.h"
 #include "Include/TextureManager.h"
-
-#include <thread>
-#include <chrono>
-#include <functional>
+#include "Include/AssimpSceneExporter.h"
 
 // Aggiungi variabili globali per ImGuizmo
 static ImGuizmo::OPERATION currentGizmoOperation = ImGuizmo::UNIVERSAL;
@@ -58,7 +60,6 @@ void handlePickingResult(const glm::vec3& idColor);
 void resetCameraView();
 bool isPositionOccupied(const glm::vec3& position, float radius, const SceneManager& sceneManager);
 glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& sceneManager);
-void processKeyboardShortcuts(GLFWwindow* window);
 void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection);
 void openModelFile();
 void openImageFile();
@@ -86,7 +87,8 @@ static bool dontAskTextureReplace = false;
 float fps = 0.0f;
 float frameTimeAccumulator = 0.0f;
 int frameCount = 0;
-float timeValue = static_cast<float>(glfwGetTime());
+// Timer globale coerente per shader/time
+float gTime = 0.0f;
 
 // Oggetti e controlli
 bool objectMoving = false;
@@ -106,10 +108,26 @@ struct ErrorDialog
 {
     bool show = false;
     std::string title = "";
-	std::string message = "";
-	std::string details = "";
+    std::string message = "";
+    std::string details = "";
 };
 static ErrorDialog errorDialog;
+
+struct SuccessDialog {
+    bool show = false;
+    std::string title = "";
+    std::string message = "";
+    std::string details = "";
+
+    void reset() {
+        show = false;
+        title = "";
+        message = "";
+        details = "";
+    }
+};
+
+static SuccessDialog successDialog;
 
 // Dialog di caricamento
 struct LoadingDialog {
@@ -168,6 +186,34 @@ struct LoadingDialog {
 };
 
 static LoadingDialog loadingDialog;
+
+struct ExportFormatDialog {
+    bool show = false;
+    int selectedFormatIndex = 0;
+    std::vector<AssimpSceneExporter::ExportFormat> formats;
+    std::string exportFolder = "";
+    bool copyTextures = true;
+    bool embedTextures = true;
+
+    void open(const std::string& folder) {
+        show = true;
+        exportFolder = folder;
+        formats = AssimpSceneExporter::getSupportedFormats();
+        selectedFormatIndex = 0; // Default OBJ
+        embedTextures = true;
+        copyTextures = true;
+    }
+
+    void reset() {
+        show = false;
+        selectedFormatIndex = 0;
+        exportFolder = "";
+        copyTextures = true;
+        embedTextures = true;
+    }
+};
+
+static ExportFormatDialog exportFormatDialog;
 
 std::vector<unsigned int> multiSelectedObjectIds;
 bool multiSelectionMode = false;
@@ -524,7 +570,7 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     SetUniformMat4(shader, "view", view);
     SetUniformMat4(shader, "projection", projection);
     SetUniformVec3(shader, "viewPos", mouseControl.camPos);
-    SetUniformFloat(shader, "time", timeValue);
+    SetUniformFloat(shader, "time", gTime);
     
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -573,13 +619,83 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     }
 }
 
+#ifdef _WIN32
+#include <windows.h>
+#include <commdlg.h>
+#include <shlobj.h>
+#endif
+std::string openFolderDialog() {
+#ifdef _WIN32
+    std::string selectedPath;
+
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (SUCCEEDED(hr)) {
+        IFileDialog* pfd = nullptr;
+        hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(&pfd));
+
+        if (SUCCEEDED(hr)) {
+            DWORD dwOptions;
+            pfd->GetOptions(&dwOptions);
+            pfd->SetOptions(dwOptions | FOS_PICKFOLDERS);
+            pfd->SetTitle(L"Scegli dove salvare la scena");
+
+            hr = pfd->Show(NULL);
+            if (SUCCEEDED(hr)) {
+                IShellItem* psi;
+                hr = pfd->GetResult(&psi);
+                if (SUCCEEDED(hr)) {
+                    PWSTR pszPath;
+                    hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+                    if (SUCCEEDED(hr)) {
+                        // Converti da WCHAR* a std::string
+                        int size = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
+                            nullptr, 0, nullptr, nullptr);
+                        selectedPath.resize(size - 1);
+                        WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
+                            &selectedPath[0], size, nullptr, nullptr);
+                        CoTaskMemFree(pszPath);
+                    }
+                    psi->Release();
+                }
+            }
+            pfd->Release();
+        }
+        CoUninitialize();
+    }
+
+    return selectedPath;
+#else
+    return "";
+#endif
+}
+
 void renderSceneControlPanel() {
     if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        
 
-        // Pannello per aggiungere oggetti
+        ImGui::Text("Scene Management:");        
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
+        
+        if (ImGui::Button("Export Scene Bundle", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
+            std::string folderPath = openFolderDialog();
+            
+            if (!folderPath.empty()) {
+                exportFormatDialog.open(folderPath);
+            } else {
+                std::cout << "Export cancellato dall'utente" << std::endl;
+            }
+        }
+        
+        ImGui::PopStyleColor(3);
+        
+        ImGui::Separator();
         ImGui::Text("Add Objects:");
         
-        // Aggiungi pulsanti per caricare modelli esterni
+
         if (ImGui::Button("Load 3D Model", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
             // Mostra popup per scegliere modalità
             ImGui::OpenPopup("Choose Load Mode");
@@ -627,7 +743,7 @@ void renderSceneControlPanel() {
 
         ImGui::Separator();
         
-        // Codice esistente per aggiungere modelli predefiniti
+
         ImGui::Text("Add Built-in Object:");
         std::vector<std::string> modelNames = modelManager.getModelNames();
 
@@ -641,7 +757,7 @@ void renderSceneControlPanel() {
                     return true;
                 }
                 return false;
-            }, & modelNames, modelNames.size())) {
+            }, &modelNames, modelNames.size())) {
             }
 
             if (ImGui::Button("Add Object", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30)) &&
@@ -668,10 +784,11 @@ void renderSceneControlPanel() {
         
         ImGui::Separator();
 
+
         // Variabili per gestire la rinomina
         static bool isRenaming = false;
         static unsigned int renamingId = 0;
-        static char renameBuffer[128] = ""; // Buffer per il nuovo nome
+        static char renameBuffer[128] = "";
 
         // Lista oggetti nella scena
         ImGui::Text("Objects in Scene (%zu):", sceneManager.getObjectCount());
@@ -682,45 +799,37 @@ void renderSceneControlPanel() {
                 flags |= ImGuiTreeNodeFlags_Selected;
             }
 
-            // Mostra il campo di input per la rinomina o il nome normale
             bool isThisObjectRenaming = isRenaming && renamingId == obj->getId();
             
             if (isThisObjectRenaming) {
-                // Mostra il campo di input per rinominare
                 ImGui::PushID(static_cast<int>(obj->getId()));
                 if (ImGui::InputText("##rename", renameBuffer, sizeof(renameBuffer), 
                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    // Applica il nuovo nome quando l'utente preme Enter
                     sceneManager.renameObject(obj->getId(), renameBuffer);
                     isRenaming = false;
                 }
                 
-                // Gestione della perdita di focus
                 if (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0)) {
                     isRenaming = false;
                 }
                 ImGui::PopID();
             } else {
-                // Mostra il nome normale
                 ImGui::TreeNodeEx(obj->getName().c_str(), flags);
                 
-                // Controllo per il doppio click
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                     isRenaming = true;
                     renamingId = obj->getId();
                     strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
-                    renameBuffer[sizeof(renameBuffer) - 1] = '\0'; // Assicura terminazione
+                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
                 }
             }
 
-            // Gestione click singolo (selezione)
             if (!isThisObjectRenaming && ImGui::IsItemClicked()) {
                 sceneManager.selectObject(obj->getId());
                 objectSelected = true;
                 showSelectedModelPanel = true;
             }
 
-            // Menu contestuale
             if (ImGui::BeginPopupContextItem()) {
                 if (ImGui::MenuItem("Rename")) {
                     isRenaming = true;
@@ -731,16 +840,13 @@ void renderSceneControlPanel() {
                 if (ImGui::MenuItem("Delete")) {
                     unsigned int idToRemove = obj->getId();
                     
-                    // Se l'oggetto da rimuovere è quello attualmente selezionato
                     if (obj->getSelected()) {
                         objectSelected = false;
                         showSelectedModelPanel = false;
                     }
                     
-                    // Rimuovi l'oggetto dalla scena
                     sceneManager.removeObject(idToRemove);
                     
-                    // Esci dal loop per evitare iterazione su container modificato
                     ImGui::EndPopup();
                     break;
                 }
@@ -750,60 +856,6 @@ void renderSceneControlPanel() {
 
         ImGui::Separator();
         ImGui::Checkbox("Enable Picking", &pickingEnabled);
-    }
-}
-
-void processKeyboardShortcuts(GLFWwindow* window) {
-    // Salta se ImGui sta usando l'input
-    if (ImGui::GetIO().WantCaptureKeyboard) return;
-
-    // Gestisci prima le combinazioni con modificatori
-    bool ctrlPressed = glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS ||
-                       glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS;
-    bool shiftPressed = glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ||
-                        glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS;
-    
-    static bool keyPressedCtrlA = false;
-    static bool keyPressedCtrlD = false;
-    static bool keyPressedDelete = false;
-    static bool keyPressedT = false;
-    static bool keyPressedR = false;
-    static bool keyPressedS = false;
-    static bool keyPressedU = false; // Per la modalità Universale
-    
-    // Modalità di ImGuizmo con singoli tasti
-    if (objectSelected) {
-        // Tasto T: modalità traslazione
-        if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS && !keyPressedT) {
-            currentGizmoOperation = ImGuizmo::TRANSLATE;
-            keyPressedT = true;
-        } else if (glfwGetKey(window, GLFW_KEY_T) == GLFW_RELEASE) {
-            keyPressedT = false;
-        }
-        
-        // Tasto R: modalità rotazione
-        if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && !keyPressedR) {
-            currentGizmoOperation = ImGuizmo::ROTATE;
-            keyPressedR = true;
-        } else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_RELEASE) {
-            keyPressedR = false;
-        }
-        
-        // Tasto S: modalità scala
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && !keyPressedS) {
-            currentGizmoOperation = ImGuizmo::SCALE;
-            keyPressedS = true;
-        } else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_RELEASE) {
-            keyPressedS = false;
-        }
-
-        // Tasto U: modalità universale
-        if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS && !keyPressedU) {
-            currentGizmoOperation = ImGuizmo::UNIVERSAL;
-            keyPressedU = true;
-        } else if (glfwGetKey(window, GLFW_KEY_U) == GLFW_RELEASE) {
-            keyPressedU = false;
-        }
     }
 }
 
@@ -894,18 +946,32 @@ void openModelFile() {
     
     if (success) {
         if (dialogShown) {
-            // Mostra informazioni dettagliate del caricamento
-            auto loadedModel = modelManager.getModel(
-                std::filesystem::path(/* file path */).stem().string());
-            
+
             std::string successMessage = "Model loaded successfully!\n\n";
             successMessage += "Time: " + std::to_string(totalSeconds) + " seconds\n";
-            // TODO: Aggiungi dettagli mesh e texture
+            // Dettagli mesh e texture
+            auto& objects = sceneManager.getObjects();
+            if (!objects.empty()) {
+                int meshCount = 0;
+                int textureCount = 0;
+                
+                for (const auto& obj : objects) {
+                    if (obj->getModel()) {
+                        meshCount++;
+                        if (obj->getModel()->hasTexture()) {
+                            textureCount++;
+                        }
+                    }
+                }
+                
+                successMessage += "Meshes: " + std::to_string(meshCount) + "\n";
+                successMessage += "Textures: " + std::to_string(textureCount) + "\n";
+            }
             
             loadingDialog.complete();
             loadingDialog.statusMessage = successMessage;
             
-            // Auto-chiudi dopo 3 secondi per dare tempo di leggere
+            // Auto-chiudi dopo 3 secondi
             std::thread([]{
                 std::this_thread::sleep_for(std::chrono::milliseconds(3000));
                 loadingDialog.reset();
@@ -914,7 +980,7 @@ void openModelFile() {
     } else {
         if (dialogShown) {
             loadingDialog.error("Failed to load model");
-        } else if (totalSeconds < 0.5f) {}
+        }
     }
 }
 
@@ -945,6 +1011,228 @@ void openImageFile() {
         errorDialog.title = "Image Loading Error";
         errorDialog.message = errorMessage;
     }
+}
+
+void renderExportFormatDialog() {
+    if (!exportFormatDialog.show) return;
+    
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_Always);
+    
+    ImGui::OpenPopup("Export 3D Scene");
+    
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
+    
+    if (ImGui::BeginPopupModal("Export 3D Scene", &exportFormatDialog.show, 
+                               ImGuiWindowFlags_NoResize)) {
+        
+        ImGui::TextWrapped("Scegli il formato di export per la tua scena 3D.");
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        // Lista formati con radio buttons
+        ImGui::Text("Formato File:");
+        ImGui::Spacing();
+        
+        for (size_t i = 0; i < exportFormatDialog.formats.size(); i++) {
+            const auto& fmt = exportFormatDialog.formats[i];
+            
+            bool isSelected = (i == exportFormatDialog.selectedFormatIndex);
+            
+            if (ImGui::RadioButton(fmt.name.c_str(), isSelected)) {
+                exportFormatDialog.selectedFormatIndex = static_cast<int>(i);
+            }
+            
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%s)", fmt.extension.c_str());
+            
+            // Descrizione del formato
+            ImGui::Indent(30);
+            ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
+            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", fmt.description.c_str());
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "→ %s", fmt.useCases.c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::Unindent(30);
+            
+            ImGui::Spacing();
+        }
+        
+        ImGui::Separator();
+        
+        // Opzioni aggiuntive
+        ImGui::Spacing();
+        ImGui::Text("Opzioni:");
+
+        // Opzione embedding (se supportato)
+        if (exportFormatDialog.selectedFormatIndex < exportFormatDialog.formats.size()) {
+            const auto& selectedFmt = exportFormatDialog.formats[exportFormatDialog.selectedFormatIndex];
+
+            bool canEmbed = selectedFmt.supportsTextures && selectedFmt.supportsEmbeddedTextures;
+            bool canCopy  = selectedFmt.supportsTextures;
+
+            // Embed checkbox: disabilitata se non supportata
+            if (!canEmbed) ImGui::BeginDisabled();
+            ImGui::Checkbox("Incorpora texture nel file (se supportato)", &exportFormatDialog.embedTextures);
+            if (!canEmbed) {
+                ImGui::EndDisabled();
+                exportFormatDialog.embedTextures = false;
+                ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.2f, 1.0f),
+                    "Il formato selezionato non supporta l'incorporamento. Le texture verranno salvate separatamente.");
+            }
+
+            // Copia esterna: se embedding attivo, non serve (disabilitata); se embed non supportato, forzata ON
+            if (!canCopy) ImGui::BeginDisabled();
+            bool disableCopy = exportFormatDialog.embedTextures && canEmbed;
+            if (disableCopy) ImGui::BeginDisabled();
+            ImGui::Checkbox("Copia texture nella cartella export", &exportFormatDialog.copyTextures);
+            if (disableCopy) {
+                ImGui::EndDisabled();
+                exportFormatDialog.copyTextures = false;
+                ImGui::TextDisabled("Con incorporamento attivo non è necessaria la copia esterna.");
+            }
+            if (!canEmbed && canCopy) {
+                // formato senza embed: forzo copia
+                exportFormatDialog.copyTextures = true;
+                ImGui::TextDisabled("Le texture saranno salvate in 'textures/' accanto al file.");
+            }
+            if (!canCopy) ImGui::EndDisabled();
+
+            bool embed = exportFormatDialog.embedTextures && canEmbed;
+            bool copy = selectedFmt.supportsTextures && exportFormatDialog.copyTextures && !embed;
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::Text("Output previsto:");
+            ImGui::Indent(20);
+            if (embed) {
+                ImGui::BulletText("Un singolo file %s con texture incorporate", selectedFmt.extension.c_str());
+            }
+            else if (copy) {
+                ImGui::BulletText("File %s + cartella 'textures/' con immagini referenziate", selectedFmt.extension.c_str());
+            }
+            else if (selectedFmt.supportsTextures) {
+                ImGui::BulletText("File %s senza texture incorporate né cartella textures", selectedFmt.extension.c_str());
+            }
+            else {
+                ImGui::BulletText("File %s (formato senza materiali/texture)", selectedFmt.extension.c_str());
+            }
+            ImGui::Unindent(20);
+
+            // Dettagli formato selezionato
+            ImGui::Text("Dettagli Formato:");
+            ImGui::Indent(20);
+            ImGui::BulletText("Materiali: %s", selectedFmt.supportsMaterials ? "Sì" : "No");
+            ImGui::BulletText("Texture: %s", selectedFmt.supportsTextures ? "Sì" : "No");
+            ImGui::BulletText("Texture embedded: %s", selectedFmt.supportsEmbeddedTextures ? "Sì" : "No");
+            ImGui::BulletText("Animazioni: %s", selectedFmt.supportsAnimations ? "Sì" : "No");
+            ImGui::BulletText("Tipo: %s", selectedFmt.isBinary ? "Binario" : "Testo");
+            ImGui::Unindent(20);
+        }
+        
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        
+        // Pulsanti azione
+        float buttonWidth = (ImGui::GetContentRegionAvail().x - 10) / 2;
+        
+        if (ImGui::Button("Annulla", ImVec2(buttonWidth, 35))) {
+            exportFormatDialog.reset();
+            ImGui::CloseCurrentPopup();
+        }
+        
+        ImGui::SameLine();
+        
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.2f, 1.0f));
+
+        if (ImGui::Button("Esporta", ImVec2(buttonWidth, 35))) {
+            const auto& selectedFmt = exportFormatDialog.formats[exportFormatDialog.selectedFormatIndex];
+
+            auto now = std::chrono::system_clock::now();
+            auto time = std::chrono::system_clock::to_time_t(now);
+            std::stringstream ss;
+            ss << std::put_time(std::localtime(&time), "%Y%m%d_%H%M%S");
+
+            std::string filename = "Scene_" + ss.str() + selectedFmt.extension;
+            std::string outputPath = exportFormatDialog.exportFolder + "/" + filename;
+
+            std::cout << "[EXPORT] Inizio export in formato: " << selectedFmt.name << std::endl;
+
+            // Determina i flag effettivi
+            bool embed = exportFormatDialog.embedTextures && selectedFmt.supportsEmbeddedTextures && selectedFmt.supportsTextures;
+            bool copy  = exportFormatDialog.copyTextures && selectedFmt.supportsTextures && !embed;
+
+            auto result = AssimpSceneExporter::exportScene(
+                sceneManager,
+                modelManager,
+                outputPath,
+                selectedFmt.id,
+                copy,     // copyTextures
+                embed     // embedTextures
+            );
+
+            if (result.success) {
+                successDialog.show = true;
+                successDialog.title = "Export Successful";
+                successDialog.message = "Scena esportata con successo!";
+                
+                // Dettagli arricchiti
+                std::stringstream details;
+                details
+                    << "Formato: " << selectedFmt.name << "\n"
+                    << "File: " << filename << "\n"
+                    << "Vertici: " << result.totalVertices << "\n"
+                    << "Facce: " << result.totalFaces << "\n"
+                    << "Materiali: " << result.totalMaterials << "\n"
+                    << "Dimensione: " << (result.fileSize / 1024) << " KB\n"
+                    << "Tempo: " << result.exportTimeSeconds << " s\n";
+
+                if (selectedFmt.supportsTextures) {
+                    if (result.texturesEmbedded) {
+                        details << "Texture: " << result.texturesEmbeddedCount << " (incorporate)\n";
+                    } else if (result.externalTexturesCopied) {
+                        details << "Texture: " << result.texturesCopiedCount << " (copiate in /textures)\n";
+                    } else {
+                        details << "Texture: " << result.totalTextures << "\n";
+                    }
+                    if (result.texturesMissing > 0) {
+                        details << "Texture non salvate: " << result.texturesMissing << "\n";
+                    }
+                }
+
+                if (!result.warnings.empty()) {
+                    details << "\nNote:\n";
+                    for (const auto& w : result.warnings) {
+                        details << " - " << w << "\n";
+                    }
+                }
+                
+                successDialog.details = details.str();
+            }
+            else {
+                errorDialog.show = true;
+                errorDialog.title = "Export Error";
+                errorDialog.message = result.errorMessage;
+            }
+            
+            exportFormatDialog.reset();
+            ImGui::CloseCurrentPopup();
+        }
+        
+        ImGui::PopStyleColor(3);
+        
+        ImGui::EndPopup();
+    }
+    
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
 }
 
 int main() {
@@ -1000,7 +1288,6 @@ int main() {
     grid.initialize();
 
     // Loop temporale
-    float timeValue = 0.0f;
     std::string selectedModel = "";
 
     // Render loop
@@ -1011,7 +1298,7 @@ int main() {
         float deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        timeValue += deltaTime;
+        gTime += deltaTime;
 
         // FPS
         frameTimeAccumulator += deltaTime;
@@ -1406,7 +1693,7 @@ int main() {
                                 textureReplaceDialog.texturePath = texturePath;
                                 textureReplaceDialog.newTextureID = textureID;
                             } else if (needsConfirmation && dontAskTextureReplace) {
-                                // Applica la texture E pulisci il colore
+                                // Applica la texture E pulisci la colorazione
                                 selectedObj->setOverrideTexture(textureID);
                                 selectedObj->clearOverrideColor();
                             }
@@ -1434,6 +1721,7 @@ int main() {
                             static glm::vec4 color = selectedObj->hasOverrideColor() ? 
                                 selectedObj->getOverrideColor() : glm::vec4(1.0f);
                             
+
                             // Color picker con ruota dei colori
                             ImGuiColorEditFlags flags = ImGuiColorEditFlags_AlphaBar | 
                                                        ImGuiColorEditFlags_AlphaPreview |
@@ -1447,6 +1735,7 @@ int main() {
                                 selectedObj->setOverrideColor(color);
                             }
                             
+
                             ImGui::Separator();
                             ImGui::Text("Preset Colors:");
                             
@@ -1516,6 +1805,7 @@ int main() {
                                 selectedObj->setOverrideColor(color);
                             }
                             
+
                             ImGui::Separator();
                             
                             // Pulsante reset
@@ -1723,7 +2013,7 @@ int main() {
                 
                 if (!errorDialog.details.empty()) {
                     ImGui::Separator();
-                    ImGui::TextWrapped("Details: %s", errorDialog.details.c_str());
+                    ImGui::TextWrapped("%s", errorDialog.details.c_str());
                 }
                 
                 ImGui::PopTextWrapPos();
@@ -1736,7 +2026,7 @@ int main() {
                 float windowWidth = ImGui::GetContentRegionAvail().x;
                 ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
                 
-                if (ImGui::Button("OK", ImVec2(buttonWidth, 0)) || 
+                if (ImGui::Button("OK", ImVec2(buttonWidth, 30)) || 
                     ImGui::IsKeyPressed(ImGuiKey_Enter) || 
                     ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                     errorDialog.show = false;
@@ -1794,7 +2084,7 @@ int main() {
 
                 // Layout pulsanti migliorato
                 float totalWidth = ImGui::GetContentRegionAvail().x;
-                float buttonWidth = (totalWidth - 20) / 3; // 3 pulsanti con spacing
+                float buttonWidth = (totalWidth - 10) / 3; // 3 pulsanti con spacing
 
                 // Pulsante "Don't Replace"
                 if (ImGui::Button("Don't Replace", ImVec2(buttonWidth, 35))) {
@@ -1830,9 +2120,9 @@ int main() {
                 ImGui::SameLine();
 
                 // Pulsante "Yes, Replace"
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.1f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.2f, 1.0f));
 
                 if (ImGui::Button("Yes, Replace", ImVec2(buttonWidth, 35))) {
                     ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
@@ -1863,8 +2153,8 @@ int main() {
             ImGui::PopStyleVar();
         }
 
-        // Renderizza il dialog di caricamento
         renderLoadingDialog();
+        renderExportFormatDialog();
 
         ImGui::Render();
 
@@ -2088,11 +2378,10 @@ void renderLoadingDialog() {
             ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
             
             if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
-                // TODO: Implementa cancellazione caricamento
                 loadingDialog.error("Loading cancelled by user");
             }
         }
-        
+
         ImGui::End();
     }
     
@@ -2103,4 +2392,55 @@ void renderLoadingDialog() {
     
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar(2);
+}
+
+void renderSuccessDialog() {
+    if (!successDialog.show) return;
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(500, 150), ImVec2(800, 400));
+
+    ImGui::OpenPopup(successDialog.title.c_str());
+
+    // Stile VERDE per successo
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, 20));
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+
+    if (ImGui::BeginPopupModal(successDialog.title.c_str(), &successDialog.show,
+        ImGuiWindowFlags_NoResize)) {
+
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "SUCCESS");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", successDialog.message.c_str());
+
+        if (!successDialog.details.empty()) {
+            ImGui::Separator();
+            ImGui::TextWrapped("%s", successDialog.details.c_str());
+        }
+
+        ImGui::PopTextWrapPos();
+
+        ImGui::Separator();
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
+
+        // Pulsante OK centrato
+        float buttonWidth = 120.0f;
+        float windowWidth = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
+
+        if (ImGui::Button("OK", ImVec2(buttonWidth, 0)) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+            ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            successDialog.reset();
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
 }

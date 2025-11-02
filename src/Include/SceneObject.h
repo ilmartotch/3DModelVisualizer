@@ -75,6 +75,13 @@ public:
         return overrideTextureID;
     }
 
+    void setOverrideTextureSourcePath(const std::string& path) { 
+        m_overrideTextureSourcePath = path; 
+    }
+    std::string getOverrideTextureSourcePath() const { 
+        return m_overrideTextureSourcePath; 
+    }
+
     // Aggiorna la matrice del modello
     void updateModelMatrix() {
         m_modelMatrix = glm::mat4(1.0f);
@@ -106,4 +113,6 @@ private:
 
     GLuint overrideTextureID;
     bool useOverrideTexture;
+
+    std::string m_overrideTextureSourcePath = "";
 };

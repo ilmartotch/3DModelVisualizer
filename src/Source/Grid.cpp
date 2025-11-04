@@ -32,20 +32,34 @@ void Grid::initialize() {
     glBindVertexArray(0);
 }
 
-void Grid::render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos) {
+void Grid::render(GLuint shader,
+                  const glm::mat4& projection,
+                  const glm::mat4& view,
+                  const glm::vec3& cameraPos,
+                  bool infiniteGrid,
+                  float halfSize,
+                  const glm::vec3& gridColor,
+                  const glm::vec3& xAxisColor,
+                  const glm::vec3& zAxisColor) {
     glUseProgram(shader);
 
-    // Calcola e passa le matrici inverse
+    // Matrici inverse
     glm::mat4 invView = glm::inverse(view);
     glm::mat4 invProjection = glm::inverse(projection);
     glUniformMatrix4fv(glGetUniformLocation(shader, "invView"), 1, GL_FALSE, glm::value_ptr(invView));
     glUniformMatrix4fv(glGetUniformLocation(shader, "invProjection"), 1, GL_FALSE, glm::value_ptr(invProjection));
-    
     glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, &cameraPos[0]);
+
+    // Uniform modalità/parametri griglia
+    glUniform1i(glGetUniformLocation(shader, "uInfinite"), infiniteGrid ? 1 : 0);
+    glUniform1f(glGetUniformLocation(shader, "uHalfSize"), halfSize);
+    glUniform3fv(glGetUniformLocation(shader, "uGridColor"), 1, &gridColor[0]);
+    glUniform3fv(glGetUniformLocation(shader, "uXAxisColor"), 1, &xAxisColor[0]);
+    glUniform3fv(glGetUniformLocation(shader, "uZAxisColor"), 1, &zAxisColor[0]);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE); // Disabilita scrittura su depth buffer
+    glDepthMask(GL_FALSE);
 
     glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);

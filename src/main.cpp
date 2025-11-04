@@ -74,6 +74,13 @@ const int SIDEBAR_WIDTH = 300;
 bool showModelInfo = true;
 bool showSelectedModelPanel = false;
 
+// Config griglia
+static bool gInfiniteGrid = false;
+static constexpr float gGridHalfSize = 5.0f;
+static const glm::vec3 GRID_COLOR = glm::vec3(0.0f, 0.0f, 0.0f);
+static const glm::vec3 GRID_X_AXIS_COLOR = glm::vec3(1.0f, 0.2f, 0.2f);
+static const glm::vec3 GRID_Z_AXIS_COLOR = glm::vec3(0.2f, 0.2f, 1.0f);
+
 struct TextureReplaceDialog {
     bool show = false;
     std::string texturePath = "";
@@ -1083,7 +1090,6 @@ void renderExportFormatDialog() {
                     "Il formato selezionato non supporta l'incorporamento. Le texture verranno salvate separatamente.");
             }
 
-            // Copia esterna: se embedding attivo, non serve (disabilitata); se embed non supportato, forzata ON
             if (!canCopy) ImGui::BeginDisabled();
             bool disableCopy = exportFormatDialog.embedTextures && canEmbed;
             if (disableCopy) ImGui::BeginDisabled();
@@ -1313,7 +1319,7 @@ int main() {
         glEnable(GL_DEPTH_TEST);
 
         // Clear the screen
-        glClearColor(0.05f, 0.05f, 0.1f, 1.0f);
+        glClearColor(0.7f, 0.7f, 0.7f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Input
@@ -1335,7 +1341,9 @@ int main() {
         );
 
         // Creazione griglia
-        grid.render(gridShader, projection, view, mouseControl.camPos);
+        grid.render(gridShader, projection, view, mouseControl.camPos,
+            gInfiniteGrid, gGridHalfSize,
+            GRID_COLOR, GRID_X_AXIS_COLOR, GRID_Z_AXIS_COLOR);
 
         // Generazione frame ImGui - DEVE ESSERE PRIMA DI renderImGuizmo
         ImGui_ImplOpenGL3_NewFrame();
@@ -1351,14 +1359,39 @@ int main() {
             renderImGuizmo(view, projection);
         }
 
+        float vh = ImGui::GetIO().DisplaySize.y;
+        float space5 = vh * 0.05f;
+        float gridH = vh * 0.10f;
+        float sceneH = vh * 0.75f;
+
+        // 1) Finestra switch griglia
+        ImGui::SetNextWindowPos(ImVec2(0, space5), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, gridH), ImGuiCond_Always);
+        ImGui::Begin("Grid Mode", nullptr,
+            ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoSavedSettings);
+
+        ImGui::Text("Modalita griglia");
+        int gridModeUI = gInfiniteGrid ? 1 : 0;
+        if (ImGui::RadioButton("Finita", gridModeUI == 0)) gridModeUI = 0;
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Infinita", gridModeUI == 1)) gridModeUI = 1;
+        gInfiniteGrid = (gridModeUI == 1);
+
+        ImGui::End();
+
         // Creazione del menu ImGui
-        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, ImGui::GetIO().DisplaySize.y), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2(0, space5 + gridH + space5), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, sceneH), ImGuiCond_Always);
         ImGui::Begin("##Sidebar", nullptr,
             ImGuiWindowFlags_NoTitleBar |
             ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoBringToFrontOnFocus);
+            ImGuiWindowFlags_NoBringToFrontOnFocus |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
         ImGui::Text("3D Modeler");
         ImGui::Separator();
@@ -1388,7 +1421,7 @@ int main() {
             }
             ImGui::PopItemWidth();
 
-            if (ImGui::Button("Reset View", ImVec2(-1, 0))) { // -1 per usare tutta la larghezza
+            if (ImGui::Button("Reset View", ImVec2(-1, 0))) { 
                 resetCameraView();
             }
         }

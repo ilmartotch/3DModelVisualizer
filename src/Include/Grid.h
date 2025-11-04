@@ -9,7 +9,15 @@ public:
     ~Grid();
 
     void initialize();
-    void render(GLuint shader, const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos);
+    void render(GLuint shader,
+        const glm::mat4& projection,
+        const glm::mat4& view,
+        const glm::vec3& cameraPos,
+        bool infiniteGrid,
+        float halfSize,
+        const glm::vec3& gridColor,
+        const glm::vec3& xAxisColor,
+        const glm::vec3& zAxisColor);
     void cleanup();
 
 private:

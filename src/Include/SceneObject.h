@@ -56,7 +56,6 @@ public:
         return overrideColor;
     }
 
-    // AGGIUNGI: Metodi per la texture di override (stessa logica del colore)
     void setOverrideTexture(GLuint texID) {
         overrideTextureID = texID;
         useOverrideTexture = true;

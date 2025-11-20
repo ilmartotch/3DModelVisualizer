@@ -1,6 +1,8 @@
 #include "../Include/SceneManager.h"
+#include "../src/Include/SceneObject.h"
 #include "../src/Include/ModelManager.h"
 #include <iostream>
+#include <cstdlib>
 
 std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelName, const glm::vec3& pos) {
     auto model = modelManager.getModel(modelName);
@@ -9,9 +11,31 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
         return nullptr;
     }
 
+    glm::vec3 finalPos = hasFiniteSpace() ? clampToBounds(pos) : pos;
+
     auto obj = std::make_shared<SceneObject>(nextId++, model, modelName + "_" + std::to_string(nextId - 1));
-    obj->setPosition(pos);
-    obj->setInitialPosition(pos);
+    obj->setPosition(finalPos);
+    obj->setInitialPosition(finalPos);
+    objects.push_back(obj);
+    return obj;
+}
+
+std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelName,
+                                                     const glm::vec3& position,
+                                                     std::optional<unsigned int> forcedId)
+{
+    // Evita duplicati
+    if (forcedId && getObjectById(*forcedId)) {
+        return nullptr;
+    }
+
+    auto model = modelManager.getModel(modelName);
+    if (!model) return nullptr;
+
+    unsigned int id = forcedId ? *forcedId : nextId++;
+
+
+    auto obj = std::make_shared<SceneObject>(id, model, modelName, position);
     objects.push_back(obj);
     return obj;
 }
@@ -68,6 +92,20 @@ void SceneManager::renderAll(GLuint shader, const glm::mat4& view, const glm::ma
 void SceneManager::renderForPicking(GLuint pickingShader, const glm::mat4& view, const glm::mat4& projection) {
     for (auto& obj : objects) {
         renderObjectForPicking(obj, pickingShader, view, projection);
+    }
+}
+
+void SceneManager::renderForDepth(GLuint depthShader, unsigned int objectIdToExclude) {
+    for (const auto& obj : objects) {
+        if (!obj) continue;
+        if (obj->getId() == objectIdToExclude) continue;
+
+        glm::mat4 modelMatrix = obj->getModelMatrix();
+        SetUniformMat4(depthShader, "model", modelMatrix);
+
+        if (auto model = obj->getModel()) {
+            model->render();
+        }
     }
 }
 
@@ -172,7 +210,10 @@ std::shared_ptr<SceneObject> SceneManager::getObjectById(unsigned int id) {
 
 void SceneManager::updateObjectPosition(unsigned int id, const glm::vec3& position) {
     auto obj = getObjectById(id);
-    if (obj) obj->setPosition(position);
+    if (obj) {
+        glm::vec3 finalPos = hasFiniteSpace() ? clampToBounds(position) : position;
+        obj->setPosition(finalPos);
+    }
 }
 
 void SceneManager::updateObjectRotation(unsigned int id, const glm::quat& rotation) {
@@ -221,7 +262,8 @@ glm::vec3 SceneManager::findValidSpawnPosition(const glm::vec3& cameraPos, const
     }
     
     // Se la posizione desiderata è libera, usala direttamente
-    if (!isPositionOccupied(desiredPos, padding)) {
+    if (!isPositionOccupied(desiredPos, padding) &&
+        (!hasFiniteSpace() || isWithinBounds(desiredPos))) {
         return desiredPos;
     }
     
@@ -237,10 +279,12 @@ glm::vec3 SceneManager::findValidSpawnPosition(const glm::vec3& cameraPos, const
         // Calcola posizione sulla spirale
         float x = desiredPos.x + radius * cosf(angle);
         float z = desiredPos.z + radius * sinf(angle);
-        glm::vec3 testPos = glm::vec3(x, yOffset, z);
+        glm::vec3 testPos(x, yOffset, z);
         
-        if (!isPositionOccupied(testPos, padding)) {
-            return testPos;
+        if (hasFiniteSpace() && !isWithinBounds(testPos)) {
+            // Salta posizioni fuori dai limiti
+        } else if (!isPositionOccupied(testPos, padding)) {
+            return hasFiniteSpace() ? clampToBounds(testPos) : testPos;
         }
         
         // Incrementa per la prossima posizione sulla spirale
@@ -249,56 +293,144 @@ glm::vec3 SceneManager::findValidSpawnPosition(const glm::vec3& cameraPos, const
     }
     
     // Se non troviamo uno spazio libero dopo tutti i tentativi, ritorna una posizione distante
-    return glm::vec3(desiredPos.x + radius * 2.0f, yOffset, desiredPos.z);
+    glm::vec3 fallback(desiredPos.x + radius * 2.0f, yOffset, desiredPos.z);
+    return hasFiniteSpace() ? clampToBounds(fallback) : fallback;
+}
+
+glm::vec3 SceneManager::findValidSpawnPositionFinite(const glm::vec3& camPos, const glm::vec3& target,
+                                                   float yOffset, float radius, float halfExtent, 
+                                                   float boundaryMargin) const {
+    
+    glm::vec3 base = findValidSpawnPosition(camPos, target, yOffset, radius);
+
+    auto clampFn = [&](const glm::vec3& p) -> glm::vec3 {
+        float limit = halfExtent + boundaryMargin;
+        return glm::vec3(
+            std::clamp(p.x, -limit, limit),
+            p.y,
+            std::clamp(p.z, -limit, limit)
+        );
+        };
+
+    auto occupied = [&](const glm::vec3& p) -> bool {
+        for (const auto& obj : getObjects()) {
+            if (isSystemId(obj->getId())) continue;
+            glm::vec3 op = obj->getPosition();
+            float rOther = radius;
+            if (glm::distance(glm::vec2(op.x, op.z), glm::vec2(p.x, p.z)) < (rOther + radius) * 0.95f) {
+                return true;
+            }
+        }
+        return false;
+        };
+
+    glm::vec3 candidate = clampFn(base);
+    if (!occupied(candidate)) {
+        return candidate;
+    }
+
+    const int maxRings = 10;
+    float cell = (radius * 2.0f) + 0.15f;
+    for (int ring = 1; ring <= maxRings; ++ring) {
+        for (int dx = -ring; dx <= ring; ++dx) {
+            glm::vec3 top = candidate + glm::vec3(dx * cell, 0.0f, -ring * cell);
+            top = clampFn(top);
+            if (!occupied(top)) return top;
+
+            glm::vec3 bottom = candidate + glm::vec3(dx * cell, 0.0f, ring * cell);
+            bottom = clampFn(bottom);
+            if (!occupied(bottom)) return bottom;
+        }
+        for (int dz = -ring + 1; dz <= ring - 1; ++dz) {
+            glm::vec3 left = candidate + glm::vec3(-ring * cell, 0.0f, dz * cell);
+            left = clampFn(left);
+            if (!occupied(left)) return left;
+
+            glm::vec3 right = candidate + glm::vec3(ring * cell, 0.0f, dz * cell);
+            right = clampFn(right);
+            if (!occupied(right)) return right;
+        }
+    }
+
+    return candidate;
 }
 
 // Riposiziona alla posizione iniziale
 void SceneManager::resetObjectToInitialPosition(unsigned int id) {
     auto obj = getObjectById(id);
     if (obj) {
-        obj->resetToInitialPosition();
+        glm::vec3 p = obj->getInitialPosition();
+        obj->setPosition(hasFiniteSpace() ? clampToBounds(p) : p);
     }
 }
 
 // Rinomina l'oggetto
 void SceneManager::renameObject(unsigned int id, const std::string& newName) {
     auto obj = getObjectById(id);
-    if (obj) {
-        obj->setName(newName);
-	}
+    if (obj) obj->setName(newName);
 }
 
 // Implementazione del metodo di duplicazione
 std::shared_ptr<SceneObject> SceneManager::duplicateObject(unsigned int sourceId, const glm::vec3& newPosition) {
-    // Trova l'oggetto da duplicare
-    std::shared_ptr<SceneObject> sourceObj = nullptr;
-    for (const auto& obj : objects) {
-        if (obj->getId() == sourceId) {
-            sourceObj = obj;
-            break;
-        }
-    }
-    
-    if (!sourceObj) {
-        return nullptr;
-    }
-    
-    // Ottieni il modello originale
+    auto sourceObj = getObjectById(sourceId);
+    if (!sourceObj) return nullptr;
+
     std::string modelType = sourceObj->getName();
-    
-    // Crea un nuovo oggetto dello stesso tipo
     auto newObj = addObject(modelType, newPosition);
-    if (!newObj) {
-        return nullptr;
-    }
-    
-    // Copia le proprietà (eccetto posizione che è già impostata)
+    if (!newObj) return nullptr;
+
     newObj->setScale(sourceObj->getScale());
     newObj->setRotation(sourceObj->getRotation());
-    
-    // Genera un nome per la copia
-    std::string newName = sourceObj->getName() + " (Copy)";
-    newObj->setName(newName);
-    
+    newObj->setName(sourceObj->getName() + " (Copy)");
     return newObj;
+}
+
+// Spazio finito
+void SceneManager::setFiniteSpace(bool enabled, float halfSize, float margin) {
+    finiteSpaceEnabled = enabled;
+    finiteHalfSize = halfSize;
+    finiteMargin = margin;
+}
+
+bool SceneManager::isWithinBounds(const glm::vec3& p) const {
+    if (!finiteSpaceEnabled) return true;
+    return (p.x >= -finiteHalfSize && p.x <= finiteHalfSize &&
+            p.z >= -finiteHalfSize && p.z <= finiteHalfSize);
+}
+
+glm::vec3 SceneManager::clampToBounds(const glm::vec3& p) const {
+    if (!finiteSpaceEnabled) return p;
+    glm::vec3 r = p;
+    r.x = std::clamp(r.x, -finiteHalfSize, finiteHalfSize);
+    r.z = std::clamp(r.z, -finiteHalfSize, finiteHalfSize);
+    return r;
+}
+
+void SceneManager::markSystemId(unsigned int id) {
+    systemIds.insert(id);
+}
+
+bool SceneManager::isSystemId(unsigned int id) const {
+    return systemIds.find(id) != systemIds.end();
+}
+
+void SceneManager::applyDefaultName(unsigned int id, const std::string& baseName) {
+    // Nome = baseName_id per coerenza con la richiesta
+    std::string newName = baseName + "_" + std::to_string(id);
+    renameObject(id, newName);
+}
+
+std::shared_ptr<SceneObject> SceneManager::addSystemObject(
+    const std::string& modelName,
+    const glm::vec3& position,
+    unsigned int fixedId,
+    const std::string& displayName)
+{
+    // Usa l'overload esistente con ID forzato
+    auto obj = addObject(modelName, position, fixedId);
+    if (obj) {
+        markSystemId(fixedId);
+        renameObject(fixedId, displayName);
+    }
+    return obj;
 }

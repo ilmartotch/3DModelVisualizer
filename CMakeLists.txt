@@ -20,6 +20,10 @@ add_executable(App
   "src/Include/Shaders.h" "src/Source/Shaders.cpp"
   "src/Include/Model.h" "src/Source/Model.cpp"
   "src/Include/Grid.h" "src/Source/Grid.cpp"
+
+  # Shadows
+  "src/Include/ShadowSystem.h" "src/Source/ShadowSystem.cpp"
+  "src/Include/ShadowFloor.h" "src/Source/ShadowFloor.cpp"
   
   # Managers
   "src/Include/ModelManager.h" "src/Source/ModelManager.cpp"
@@ -42,7 +46,7 @@ add_executable(App
   
   # Utility
   "src/Source/stb_image_impl.cpp"
-)
+ "src/Source/ShadowFloor.cpp")
 
 # Trova pacchetti con vcpkg
 find_package(glfw3 CONFIG REQUIRED)

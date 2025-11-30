@@ -30,6 +30,7 @@
 #include "../Assets/Include/CubeModel.h"
 #include "../Assets/Include/SphereModel.h"
 #include "../Assets/Include/PyramidModel.h"
+#include "../Assets/Include/ImagePlaneModel.h"
 #include "Include/Grid.h"
 #include "Include/ModelManager.h"
 #include "Include/SceneManager.h"
@@ -96,22 +97,6 @@ static std::string gBoundaryWarningMessage;
 static bool showGridModeSwitchErrorPopup = false;
 static std::string gGridModeSwitchErrorMessage;
 
-// Helper confine
-bool isWithinFiniteSpace(const glm::vec3& p) {
-    if (gInfiniteGrid) return true;
-    float half = gGridHalfSize + gGridBoundaryMargin;
-    return p.x >= -half && p.x <= half && p.z >= -half && p.z <= half;
-}
-glm::vec3 clampToFiniteSpace(const glm::vec3& p) {
-    if (gInfiniteGrid) return p;
-    float half = gGridHalfSize + gGridBoundaryMargin;
-    return glm::vec3(
-        std::clamp(p.x, -half, half),
-        p.y,
-        std::clamp(p.z, -half, half)
-    );
-}
-
 struct TextureReplaceDialog {
     bool show = false;
     std::string texturePath = "";
@@ -121,7 +106,14 @@ struct TextureReplaceDialog {
 static TextureReplaceDialog textureReplaceDialog;
 static bool dontAskTextureReplace = false;
 
-// Luce direzionale
+struct LightingSettings {
+    glm::vec3 ambientColor{ 0.05f, 0.05f, 0.05f };
+    float ambientIntensity = 0.0f;
+};
+
+static LightingSettings gLighting;
+
+// Directional light
 struct DirectionalLightState {
     glm::vec3 position{ -2.0f, 2.0f, 2.0f };
     glm::vec3 color{ 1.0f, 0.95f, 0.8f }; // Colore luce emessa
@@ -131,6 +123,9 @@ struct DirectionalLightState {
     bool enabled = true;
     bool enablePlanarShadows = true;
     glm::vec4 shadowColor{0.0f, 0.0f, 0.0f, 0.35f}; 
+    bool useTarget = true;
+	glm::vec3 target{ 0.0f, 0.0f, 0.0f };
+    glm::vec3 orientationEuler{ 20.0f, 45.0f, 0.0f };
 };
 
 static DirectionalLightState gDirLight;
@@ -141,7 +136,7 @@ static bool pinDirectionalLightWindow = false;
 static bool editingLightName = false;
 static char lightNameBuffer[128] = "Directional Light";
 
-// Shadow mapping direzionale
+// Shadow mapping
 static ShadowSystem gShadows;
 static const int DIR_SHADOW_SIZE = 4096;
 static constexpr float gFloorHeight = 0.0f;
@@ -329,6 +324,84 @@ ModelManager modelManager;
 // SceneManager per la gestione della scena
 SceneManager sceneManager(modelManager);
 
+static bool ProjectToScreen(const glm::vec3& p, const glm::mat4& view, const glm::mat4& proj, ImVec2& outScreen) {
+    glm::vec4 clip = proj * view * glm::vec4(p, 1.0f);
+    if (clip.w <= 0.0f) return false;
+    glm::vec3 ndc = glm::vec3(clip) / clip.w; // [-1,1]
+    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < -1.0f || ndc.z > 1.0f) {
+        return false;
+    }
+    float x = (ndc.x * 0.5f + 0.5f) * (float)gFramebufferWidth;
+    float y = ((-ndc.y) * 0.5f + 0.5f) * (float)gFramebufferHeight; // inverti Y
+    outScreen = ImVec2(x, y);
+    return true;
+}
+
+static void drawLightDirectionOverlay(const glm::mat4& view, const glm::mat4& projection) {
+    if (!gDirLight.enabled) return;
+
+    // Direzione luce (target o Euler)
+    glm::vec3 dir = gDirLight.useTarget
+        ? glm::normalize(gDirLight.target - gDirLight.position)
+        : [&] {
+        glm::vec3 e = glm::radians(gDirLight.orientationEuler);
+        glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), e.y, glm::vec3(0, 1, 0));
+        glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), e.x, glm::vec3(1, 0, 0));
+        return glm::normalize(glm::vec3(rotY * rotX * glm::vec4(0, 0, -1, 0)));
+        }();
+
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+
+    ImVec2 p0, p1;
+    bool ok0 = ProjectToScreen(gDirLight.position, view, projection, p0);
+
+    // Calcola il punto di intersezione con il piano y = gFloorHeight
+    glm::vec3 end;
+    bool hasIntersection = false;
+    {
+        float denom = dir.y; // componente Y della direzione
+        if (std::abs(denom) > 1e-6f) {
+            float tHit = (gFloorHeight - gDirLight.position.y) / denom;
+            if (tHit >= 0.0f) {
+                end = gDirLight.position + dir * tHit;
+                hasIntersection = true;
+            }
+        }
+    }
+
+    // Fallback per stabilire una lunghezza fissa
+    if (!hasIntersection) {
+        if (gDirLight.useTarget) {
+            end = gDirLight.target;
+        }
+        else {
+            end = gDirLight.position + dir * 2.0f;
+        }
+    }
+
+    bool ok1 = ProjectToScreen(end, view, projection, p1);
+
+    if (ok0 && ok1) {
+        dl->AddLine(p0, p1, IM_COL32(255, 140, 0, 220), 2.0f);
+    }
+}
+
+bool isWithinFiniteSpace(const glm::vec3& p) {
+    if (gInfiniteGrid) return true;
+    float half = gGridHalfSize + gGridBoundaryMargin;
+    return p.x >= -half && p.x <= half && p.z >= -half && p.z <= half;
+}
+
+glm::vec3 clampToFiniteSpace(const glm::vec3& p) {
+    if (gInfiniteGrid) return p;
+    float half = gGridHalfSize;
+    return glm::vec3(
+        std::clamp(p.x, -half, half),
+        p.y,
+        std::clamp(p.z, -half, half)
+    );
+}
+
 static float getObjectEffectiveRadius(const SceneObject& obj) {
     // Dimensione base (i modelli cube/sphere/pyramid sembrano unit size → lato 1 → raggio 0.5)
     float baseRadius = 0.5f;
@@ -337,12 +410,21 @@ static float getObjectEffectiveRadius(const SceneObject& obj) {
     return baseRadius * std::max(s.x, s.z);
 }
 
+// Target directional light
+static constexpr unsigned int gDirLightTargetObjectNumericId = 0x00FFFFFD;
+static constexpr float kTargetLift = 0.002f;
 
-// Controlla se una posizione è occupata (versione semplificata)
+static inline glm::vec3 ClampTargetOnFloor(const glm::vec3& p) {
+    glm::vec3 c = p;
+    c.y = gFloorHeight + kTargetLift;
+    return clampToFiniteSpace(c);
+}
+
+// Controlla se una posizione è occupata
 bool isPositionOccupied(const glm::vec3& position, float newObjRadius, const SceneManager& manager) {
     for (const auto& obj : manager.getObjects()) {
-        // Ignora eventuali oggetti di sistema (luce, ecc.)
-        if (manager.isSystemId(obj->getId())) continue;
+        // Ignora oggetti di sistema
+        if (manager.isSystemId(obj->getId()) && obj->getId() == gDirLightTargetObjectNumericId) continue;
 
         float r = getObjectEffectiveRadius(*obj);
         float combined = r + newObjRadius;
@@ -471,6 +553,7 @@ void updateCameraPosition() {
     float camY = mouseControl.cameraDistance * sinf(glm::radians(mouseControl.orbitalAngleY));
     float camZ = radXZ * cosf(glm::radians(mouseControl.orbitalAngleX));
     mouseControl.camPos = mouseControl.cameraTarget + glm::vec3(camX, camY + mouseControl.cameraHeight / 2, camZ);
+    if (mouseControl.camPos.y < 0.5f) mouseControl.camPos.y = 0.5f;
 }
 
 void resetCameraView() {
@@ -567,12 +650,12 @@ void processMousePicking(int xWindow, int yWindow) {
 }
 
 float lastClickTime = 0.0f;
-const float doubleClickTimeThreshold = 0.3f; // 300 ms per riconoscere un doppio click
+const float doubleClickTimeThreshold = 0.3f;
 unsigned int lastClickedObjectId = 0;
 
 // Aggiungi queste variabili globali
-bool pinSelectedModelPanel = false;  // Per "fissare" il pannello
-ImVec2 selectedPanelSize = ImVec2(350, 0);  // Dimensione del pannello
+bool pinSelectedModelPanel = false;
+ImVec2 selectedPanelSize = ImVec2(350, 0);
 
 void handlePickingResult(const glm::vec3& idColor) {
     unsigned int pickedId = sceneManager.colorToId(idColor);
@@ -582,16 +665,13 @@ void handlePickingResult(const glm::vec3& idColor) {
         sceneManager.deselectAll();
         objectSelected = false;
         if (!pinSelectedModelPanel) showSelectedModelPanel = false;
-        // Disabilita il gizmo per evitare hover residui
         ImGuizmo::Enable(false);
         return;
     }
 
-    // Se c'è un ID valido, seleziona sempre
     sceneManager.selectObject(pickedId);
     objectSelected = true;
     showSelectedModelPanel = true;
-    // Riabilita il gizmo quando c'è un oggetto selezionato
     ImGuizmo::Enable(true);
 
     if (auto sel = sceneManager.getSelectedObject()) {
@@ -672,10 +752,20 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
     auto selectedObj = sceneManager.getSelectedObject();
 
     if (mouseControl.isOrbiting) {
+        if (mouseControl.camPos.y <= 0.5f && yoffset < 0.0f) {
+            yoffset = 0.0f;
+        }
+
+        float proposedOrbitalY = mouseControl.orbitalAngleY + yoffset * sensitivity;
+
+        if (!(mouseControl.camPos.y <= 0.5f && proposedOrbitalY < mouseControl.orbitalAngleY)) {
+            mouseControl.orbitalAngleY = proposedOrbitalY;
+            if (mouseControl.orbitalAngleY > 85.0f) mouseControl.orbitalAngleY = 85.0f;
+            if (mouseControl.orbitalAngleY < -85.0f) mouseControl.orbitalAngleY = -85.0f;
+        }
+
+        // Aggiorna sempre l’angolo orizzontale
         mouseControl.orbitalAngleX += xoffset * sensitivity;
-        mouseControl.orbitalAngleY += yoffset * sensitivity;
-        if (mouseControl.orbitalAngleY > 85.0f) mouseControl.orbitalAngleY = 85.0f;
-        if (mouseControl.orbitalAngleY < -85.0f) mouseControl.orbitalAngleY = -85.0f;
 
         updateCameraPosition();
     }
@@ -735,7 +825,17 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     SetUniformVec3(shader, "viewPos", mouseControl.camPos);
     SetUniformFloat(shader, "time", gTime);
 
-    glm::vec3 lightDir = glm::normalize(glm::vec3(0.0f) - gDirLight.position);
+    glm::vec3 lightDir;
+    if (gDirLight.useTarget) {
+        lightDir = glm::normalize(gDirLight.target - gDirLight.position);
+    }
+    else {
+        glm::vec3 e = glm::radians(gDirLight.orientationEuler);
+        glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), e.y, glm::vec3(0, 1, 0));
+        glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), e.x, glm::vec3(1, 0, 0));
+        glm::vec3 forward = glm::vec3(rotY * rotX * glm::vec4(0, 0, -1, 0));
+        lightDir = glm::normalize(forward);
+    }
     SetUniformInt(shader,  "uDirLight.enabled", gDirLight.enabled ? 1 : 0);
     SetUniformVec3(shader, "uDirLight.direction", lightDir);
     SetUniformVec3(shader, "uDirLight.color", gDirLight.color);
@@ -973,6 +1073,7 @@ void renderSceneControlPanel() {
         ImGui::Text("Add Built-in Object:");
 
         std::vector<std::string> modelNames = modelManager.getModelNames();
+        modelNames.erase(std::remove(modelNames.begin(), modelNames.end(), "ImagePlane"), modelNames.end());
         static int selectedModelIndex = 0;
 
         if (!modelNames.empty()) {
@@ -1126,6 +1227,7 @@ void renderSceneControlPanel() {
 
             bool renamingThis = isRenaming && renamingId == obj->getId();
             bool isLight = (obj->getId() == gDirLightObjectNumericId);
+            bool isLightTarget = (obj->getId() == gDirLightTargetObjectNumericId);
 
             if (renamingThis && isLight) {
                 ImGui::PushID(static_cast<int>(obj->getId()));
@@ -1151,7 +1253,7 @@ void renderSceneControlPanel() {
 
             if (!renamingThis && ImGui::IsItemClicked()) {
                 sceneManager.selectObject(obj->getId());
-                objectSelected = isLight ? false : true;
+                objectSelected = (!isLight);
                 showSelectedModelPanel = !isLight;
                 if (isLight && !pinDirectionalLightWindow) {
                     showDirectionalLightWindow = true;
@@ -1159,7 +1261,7 @@ void renderSceneControlPanel() {
             }
 
             if (ImGui::BeginPopupContextItem()) {
-                if (isLight && ImGui::MenuItem("Rename")) {
+                if ((isLight || isLightTarget) && ImGui::MenuItem("Rename")) {
                     isRenaming = true;
                     renamingId = obj->getId();
                     strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
@@ -1193,94 +1295,6 @@ void renderFiniteLimitDialog() {
         if (ImGui::Button("Nascondi", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
             showFiniteLimitDialog = false;
         }
-    }
-    ImGui::End();
-}
-
-// Window di controllo della luce
-static void renderDirectionalLightWindow() {
-    const bool lightSelected = (sceneManager.getSelectedObjectId() == gDirLightObjectNumericId);
-
-    // Autoclose se non è pinnata e la luce non è selezionata
-    if (!pinDirectionalLightWindow && !lightSelected) {
-        showDirectionalLightWindow = false;
-    }
-
-    // Mostra solo se esplicitamente aperta o pinnata
-    if (!showDirectionalLightWindow && !pinDirectionalLightWindow) return;
-
-    ImGui::SetNextWindowPos(ImVec2(SIDEBAR_WIDTH + 10.0f, 50.0f), ImGuiCond_Appearing);
-    ImGui::SetNextWindowSize(ImVec2(380, 280), ImGuiCond_Appearing);
-    ImGui::SetNextWindowCollapsed(false, ImGuiCond_Appearing);
-
-    if (ImGui::Begin("Directional Light", &showDirectionalLightWindow,
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize))
-    {
-
-        if (!showDirectionalLightWindow && !pinDirectionalLightWindow) {
-            pinDirectionalLightWindow = false;
-            ImGui::End();
-            return;
-        }
-
-        // Header nome + rename
-        auto lightObj = findObjectById(gDirLightObjectNumericId);
-        std::string currentName = lightObj ? lightObj->getName() : "Directional Light";
-        ImGui::Text("Name:");
-        ImGui::SameLine();
-        if (!editingLightName) {
-            ImGui::TextUnformatted(currentName.c_str());
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Edit")) {
-                editingLightName = true;
-                strncpy(lightNameBuffer, currentName.c_str(), sizeof(lightNameBuffer)-1);
-                lightNameBuffer[sizeof(lightNameBuffer)-1] = '\0';
-            }
-        } else {
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 120);
-            ImGui::InputText("##light_name_edit", lightNameBuffer, sizeof(lightNameBuffer));
-            ImGui::PopItemWidth();
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Apply")) {
-                sceneManager.renameObject(gDirLightObjectNumericId, lightNameBuffer);
-                editingLightName = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::SmallButton("Cancel")) {
-                editingLightName = false;
-            }
-        }
-
-        ImGui::Separator();
-        ImGui::Checkbox("Pin Window", &pinDirectionalLightWindow);
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Close")) {
-            showDirectionalLightWindow = false;
-            if (!pinDirectionalLightWindow) {
-                ImGui::End();
-                return;
-            }
-        }
-
-        ImGui::Separator();
-        ImGui::Checkbox("Enabled", &gDirLight.enabled);
-        ImGui::SameLine();
-        ImGui::Checkbox("Planar Shadows", &gDirLight.enablePlanarShadows);
-
-        ImGui::Separator();
-        ImGui::Text("Emission Color:");
-        ImGui::ColorEdit3("##emit", &gDirLight.color.x);
-
-        ImGui::Separator();
-        ImGui::Text("Position:");
-        glm::vec3 pos = gDirLight.position;
-        if (ImGui::InputFloat3("##lightpos", &pos.x)) {
-            gDirLight.position = pos;
-            sceneManager.updateObjectPosition(gDirLightObjectNumericId, gDirLight.position);
-        }
-
-        ImGui::Separator();
-        ImGui::TextDisabled("L'icona luce non e' deformabile e non supporta texture/colore.");
     }
     ImGui::End();
 }
@@ -1685,7 +1699,7 @@ void updateFiniteLimitState() {
     size_t nonSystemCount = 0;
     for (const auto& obj : sceneManager.getObjects()) {
         if (sceneManager.isSystemId(obj->getId())) continue;
-        ++nonSystemCount;
+        nonSystemCount++;
     }
 
     gFiniteLimitReached = (nonSystemCount >= static_cast<size_t>(gFiniteModeMaxObjects));
@@ -1787,21 +1801,15 @@ int main() {
     modelManager.registerModel(std::make_shared<CubeModel>());
     modelManager.registerModel(std::make_shared<SphereModel>());
     modelManager.registerModel(std::make_shared<PyramidModel>());
+    modelManager.registerModel(std::make_shared<ImagePlaneModel>());
 
     // Inizializza i modelli registrati
     modelManager.initializeModels();
 
-    // Aggiungi il piano alla scena
-    // auto floorObj = sceneManager.addObject("Floor", glm::vec3(0.0f));
-
     // Inizializza il sistema di picking
     initializePickingSystem();
 
-    // Inizializza Shadow System
-    if (!gShadows.initialize(DIR_SHADOW_SIZE)) {
-        std::cerr << "Errore inizializzazione ShadowSystem" << std::endl;
-    }
-    gShadows.setFloorHeight(gFloorHeight);
+    
 
     // Imposta il modello della griglia
     Grid grid;
@@ -1813,6 +1821,20 @@ int main() {
     auto lightObj = sceneManager.addSystemObject("Sphere", lightInitialPos, gDirLightObjectNumericId, "Directional Light");
     if (lightObj) {
         sceneManager.updateObjectScale(gDirLightObjectNumericId, glm::vec3(0.15f));
+    }
+
+    {
+        // Posizione iniziale del bersaglio: usa gDirLight.target ma forza y a 0
+        gDirLight.target = ClampTargetOnFloor(gDirLight.target);
+        auto targetObj = sceneManager.addSystemObject("ImagePlane", gDirLight.target, gDirLightTargetObjectNumericId, "Light Target");
+        if (targetObj) {
+            sceneManager.updateObjectScale(gDirLightTargetObjectNumericId, glm::vec3(0.15f, 0.15f, 0.15f));
+            glm::quat rot = glm::quat(glm::radians(glm::vec3(-90.0f, 0.0f, 0.0f)));
+            sceneManager.updateObjectRotation(gDirLightTargetObjectNumericId, rot);
+            if (auto t = findObjectById(gDirLightTargetObjectNumericId)) {
+                t->setOverrideColor(glm::vec4(1.0f, 140.0f / 255.0f, 0.0f, 1.0f));
+            }
+        }
     }
 
     // Render loop
@@ -1869,13 +1891,24 @@ int main() {
             renderImGuizmo(view, projection);
         }
 
+        float vw = ImGui::GetIO().DisplaySize.x;
         float vh = ImGui::GetIO().DisplaySize.y;
         float space5 = vh * 0.05f;
         float gridH = vh * 0.10f;
         float sceneH = vh * 0.75f;
 
+        // Larghezza colonna sinistra proporzionale
+        float leftW = std::clamp(vw * 0.20f, 200.0f, 350.0f);
+
+        // Altezza pannello Lighting proporzionale
+        float lightH = vh * 0.22f;
+
+        // Altezza della sidebar
+        float sideH = sceneH - lightH - space5;
+        if (sideH < vh * 0.30f) sideH = vh * 0.30f;
+
         ImGui::SetNextWindowPos(ImVec2(0, space5), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, gridH), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftW, gridH), ImGuiCond_Always);
         ImGui::Begin("Grid Mode", nullptr,
             ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoMove |
@@ -1985,7 +2018,7 @@ int main() {
 
         // Creazione del menu ImGui
         ImGui::SetNextWindowPos(ImVec2(0, space5 + gridH + space5), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_WIDTH, sceneH), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftW, sideH), ImGuiCond_Always);
         ImGui::Begin("##Sidebar", nullptr,
             ImGuiWindowFlags_NoTitleBar |
             ImGuiWindowFlags_NoMove |
@@ -2056,20 +2089,100 @@ int main() {
 
         ImGui::End(); // Fine sidebar
 
+        ImGui::SetNextWindowPos(ImVec2(0, space5 + gridH + space5 + sideH + space5), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftW, lightH), ImGuiCond_Always);
+        ImGui::Begin("Lighting", nullptr,
+            ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+        // Sezione Ambient
+        ImGui::Text("Ambient Light");
+        ImGui::Separator();
+        ImGui::SliderFloat("Intensity", &gLighting.ambientIntensity, 0.0f, 1.0f, "%.3f");
+        ImGui::ColorEdit3("Color", &gLighting.ambientColor.x);
+        ImGui::TextDisabled("Suggerimento: valori bassi (0.0 - 0.15) riducono il 'lavaggio' delle ombre.");
+
+        ImGui::Spacing();
+        ImGui::Separator();
+
+        // Sezione Directional Light (contenuti essenziali spostati qui)
+        ImGui::Text("Directional Light");
+        ImGui::Checkbox("Enabled", &gDirLight.enabled);
+        ImGui::SameLine();
+        ImGui::Checkbox("Planar Shadows", &gDirLight.enablePlanarShadows);
+
+        ImGui::Text("Emission Color:");
+        ImGui::ColorEdit3("##emit_dir", &gDirLight.color.x);
+
+        ImGui::Text("Position:");
+        glm::vec3 pos = gDirLight.position;
+        if (ImGui::InputFloat3("##lightpos_dir", &pos.x)) {
+            if (pos.y < 0.0f) pos.y = 0.0f;
+            gDirLight.position = pos;
+            sceneManager.updateObjectPosition(gDirLightObjectNumericId, gDirLight.position);
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Target (sul piano XZ):");
+        glm::vec3 t = gDirLight.target;
+        if (ImGui::InputFloat3("Target", &t.x)) {
+            gDirLight.target = ClampTargetOnFloor(t);
+            sceneManager.updateObjectPosition(gDirLightTargetObjectNumericId, gDirLight.target);
+        }
+
+        if (ImGui::SmallButton("Look at origin (0,0,0)")) {
+            gDirLight.target = ClampTargetOnFloor(glm::vec3(0.0f));
+            sceneManager.updateObjectPosition(gDirLightTargetObjectNumericId, gDirLight.target);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Align target to grid hit")) {
+            glm::vec3 dir = glm::normalize(gDirLight.target - gDirLight.position);
+            float denom = dir.y;
+            if (std::abs(denom) > 1e-4f) {
+                float tHit = (gFloorHeight - gDirLight.position.y) / denom;
+                if (tHit >= 0.0f) {
+                    glm::vec3 hit = gDirLight.position + dir * tHit;
+                    gDirLight.target = ClampTargetOnFloor(hit);
+                    sceneManager.updateObjectPosition(gDirLightTargetObjectNumericId, gDirLight.target);
+                }
+            }
+        }
+        else {
+            glm::vec3 euler = gDirLight.orientationEuler;
+            if (ImGui::InputFloat3("Euler (Pitch,Yaw,Roll)", &euler.x)) {
+                gDirLight.orientationEuler = euler;
+            }
+            ImGui::TextDisabled("Nota: Roll non influisce sulla direzione base.");
+        }
+
+        ImGui::Separator();
+        ImGui::TextDisabled("L'icona luce non e' deformabile e non supporta texture/colore.");
+
+        ImGui::End();
+
         // Pannello per il modello selezionato
         auto selObjForPanel = sceneManager.getSelectedObject();
         bool lightSelected = selObjForPanel && (selObjForPanel->getId() == gDirLightObjectNumericId);
         if (showSelectedModelPanel && !lightSelected) {
-            ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-
-            // Imposta una dimensione minima garantita per il pannello
-            ImVec2 minSize = ImVec2(400, 550);
+            float detailsWidth = std::clamp(vw * 0.25f, 300.0f, 500.0f);
+            ImVec2 minSize = ImVec2(300, 550);
             ImGui::SetNextWindowSizeConstraints(minSize, ImVec2(FLT_MAX, FLT_MAX));
 
-            ImGui::SetNextWindowPos(ImVec2(displaySize.x - selectedPanelSize.x - 10, 50), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(selectedPanelSize, ImGuiCond_FirstUseEver);
+            // Se non pinnato, forzo sempre la posizione standard (ancorata al top-right)
+            if (!pinSelectedModelPanel) {
+                ImVec2 anchorPos(ImGui::GetMainViewport()->Pos.x + vw - 12.0f,
+                    ImGui::GetMainViewport()->Pos.y + 60.0f);
+                ImGui::SetNextWindowPos(anchorPos, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+                ImGui::SetNextWindowSize(ImVec2(detailsWidth, 0.0f), ImGuiCond_Always);
+            }
+            else {
+                // Se pinnato, mantengo la posizione scelta dall’utente, ma imposto size al primo utilizzo
+                ImGui::SetNextWindowSize(ImVec2(detailsWidth, 0.0f), ImGuiCond_FirstUseEver);
+            }
 
-            // Inizia il pannello dell'oggetto selezionato
             if (ImGui::Begin("Selected Object", &showSelectedModelPanel)) {
                 auto selectedObj = sceneManager.getSelectedObject();
 
@@ -2275,14 +2388,12 @@ int main() {
 
                         if (rotChanged) {
                             // Calcola la differenza di rotazione
-                            glm::vec3 delta = displayedEulerAngles - previousAngles;
-
-                            // Crea un quaternione dalla differenza e applicalo alla rotazione esistente
-                            glm::quat deltaQuat = glm::quat(glm::radians(delta));
-                            glm::quat newRotation = deltaQuat * selectedObj->getRotation();
-
+                            glm::vec3 deltaRotation = displayedEulerAngles - glm::degrees(glm::eulerAngles(selectedObj->getRotation()));
+                            displayedEulerAngles += deltaRotation;
+                            glm::quat rotation = glm::quat(glm::radians(displayedEulerAngles));
+                            if (position.y < 0.0f) position.y = 0.0f;
                             sceneManager.updateObjectPosition(selectedObj->getId(), position);
-                            sceneManager.updateObjectRotation(selectedObj->getId(), newRotation);
+                            sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
                             sceneManager.updateObjectScale(selectedObj->getId(), scale);
                         }
 
@@ -2784,32 +2895,41 @@ int main() {
         }
 
         // Aggiorna Shadow System (matrici luce dinamiche)
-        gShadows.setLightPosition(gDirLight.position);
-        gShadows.updateMatrices(sceneManager, gDirLightObjectNumericId);
-
-        // Depth pass (shadow map)
-        if (gEnableShadowMap && gDirLight.enabled) {
-            gShadows.renderDepthPass(sceneManager, dirShadowDepthShader, gDirLightObjectNumericId, fbw, fbh);
+        glm::vec3 lightDir;
+        if (gDirLight.useTarget) {
+            lightDir = glm::normalize(gDirLight.target - gDirLight.position);
         }
+        else {
+            glm::vec3 e = glm::radians(gDirLight.orientationEuler);
+            glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), e.y, glm::vec3(0, 1, 0));
+            glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), e.x, glm::vec3(1, 0, 0));
+            lightDir = glm::normalize(glm::vec3(rotY * rotX * glm::vec4(0, 0, -1, 0)));
+        }
+
+        gShadows.updateMatrices(sceneManager, gDirLightObjectNumericId);
 
         // Clear per pass principale
         glEnable(GL_DEPTH_TEST);
         glClearColor(0.7f, 0.7f, 0.7f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		
         // Griglia
         grid.render(gridShader, projection, view, mouseControl.camPos,
-                    gInfiniteGrid, gGridHalfSize,
-                    GRID_COLOR, GRID_X_AXIS_COLOR, GRID_Z_AXIS_COLOR);
+            gInfiniteGrid, gGridHalfSize,
+            GRID_COLOR, GRID_X_AXIS_COLOR, GRID_Z_AXIS_COLOR);
 
         // Scene
         renderScene(shader, view, projection);
 
+        drawLightDirectionOverlay(view, projection);
+        if (objectSelected) {
+            renderImGuizmo(view, projection);
+        }
 
         renderLoadingDialog();
         renderExportFormatDialog();
         renderFiniteLimitDialog();
-        renderDirectionalLightWindow();
 		renderGridModeSwitchErrorDialog();
 
         ImGui::Render();
@@ -2849,7 +2969,9 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
 
     glm::mat4 modelMatrix = selectedObj->getModelMatrix();
     bool isLight = (selectedObj->getId() == gDirLightObjectNumericId);
-    ImGuizmo::OPERATION op = isLight ? ImGuizmo::TRANSLATE : currentGizmoOperation;
+    bool isLightTarget = (selectedObj->getId() == gDirLightTargetObjectNumericId);
+
+    ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
 
     ImGuizmo::Manipulate(
         glm::value_ptr(view),
@@ -2869,21 +2991,48 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
         );
 
         if (isLight) {
-            // Solo posizione per la luce
+            if (position.y < 0.0f) position.y = 0.0f;
+            position = clampToFiniteSpace(position);
             sceneManager.updateObjectPosition(selectedObj->getId(), position);
             gDirLight.position = position;
-        } else {
-            // flusso normale
+        }
+        else if (isLightTarget) {
+
+            position = ClampTargetOnFloor(position);
+            sceneManager.updateObjectPosition(selectedObj->getId(), position);
+
+            glm::quat flatRot = glm::quat(glm::radians(glm::vec3(-90.0f, 0.0f, 0.0f)));
+            sceneManager.updateObjectRotation(selectedObj->getId(), flatRot);
+
+            gDirLight.target = position;
+        }
+        else {
             glm::vec3 deltaRotation = euler - glm::degrees(glm::eulerAngles(selectedObj->getRotation()));
             displayedEulerAngles += deltaRotation;
             glm::quat rotation = glm::quat(glm::radians(displayedEulerAngles));
+            if (position.y < 0.0f) position.y = 0.0f;
+            position = clampToFiniteSpace(position);
             sceneManager.updateObjectPosition(selectedObj->getId(), position);
             sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
             sceneManager.updateObjectScale(selectedObj->getId(), scale);
         }
     }
+
+    // Mantieni vincoli post-manipolazione
     if (auto lightObj = findObjectById(gDirLightObjectNumericId)) {
-        gDirLight.position = lightObj->getPosition();
+        glm::vec3 lp = clampToFiniteSpace(lightObj->getPosition());
+        if (lp.y < 0.0f) lp.y = 0.0f;
+        if (lp != lightObj->getPosition()) {
+            sceneManager.updateObjectPosition(gDirLightObjectNumericId, lp);
+        }
+        gDirLight.position = lp;
+    }
+    if (auto targetObj = findObjectById(gDirLightTargetObjectNumericId)) {
+        glm::vec3 tp = ClampTargetOnFloor(targetObj->getPosition());
+        if (tp != targetObj->getPosition()) {
+            sceneManager.updateObjectPosition(gDirLightTargetObjectNumericId, tp);
+        }
+        gDirLight.target = tp;
     }
 }
 

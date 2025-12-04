@@ -1,84 +1,119 @@
-#include "../Include/Window.h"
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
+#include "../Include/Window.h"
+#include <iostream>
+#include <stb_image.h>
 
-Window::~Window()
+#ifdef _WIN32
+#include <windows.h>
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#endif
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+
+Window::Window()
+    : m_window(nullptr)
+    , m_draggingTitleBar(false)
+    , m_dragStartX(0.0)
+    , m_dragStartY(0.0)
+    , m_windowPosX(0)
+    , m_windowPosY(0)
 {
+}
+
+Window::~Window() {
+    if (m_window) {
+        glfwDestroyWindow(m_window);
+    }
 }
 
 bool Window::initialize(int width, int height, const char* title) {
-	// Inizializza GLFW
-	if (!glfwInit()) {
-		return false;
-	}
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW" << std::endl;
+        return false;
+    }
 
-	// Crea la finestra
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	m_width = width;
-	m_height = height;
+    // MODIFICA: Ripristina i bordi nativi della finestra
+    glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-	m_window = glfwCreateWindow(width, height, title, NULL, NULL);
-	if (!m_window) {
-		glfwTerminate();
-		return false;
-	}
-	glfwMakeContextCurrent(m_window);
+    m_window = glfwCreateWindow(width, height, title, nullptr, nullptr);
+    if (!m_window) {
+        std::cerr << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return false;
+    }
 
-	glfwSetWindowUserPointer(m_window, this);
-	glfwSetFramebufferSizeCallback(m_window, Window_framebufferSizeCallback);
+    glfwMakeContextCurrent(m_window);
+    glfwSwapInterval(1);
 
-	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-		return false;
-	}
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cerr << "Failed to initialize GLAD" << std::endl;
+        return false;
+    }
 
-	return true;
+    // Personalizza la title bar nativa (Windows 11+)
+#ifdef _WIN32
+    HWND hwnd = glfwGetWin32Window(m_window);
+    if (hwnd) {
+        BOOL useDarkMode = TRUE;
+        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
 
+        COLORREF titleBarColor = RGB(45, 45, 50);
+        COLORREF titleTextColor = RGB(160, 140, 200);
+        COLORREF borderColor = RGB(80, 80, 85);
+
+        DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &titleBarColor, sizeof(titleBarColor));
+        DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, &titleTextColor, sizeof(titleTextColor));
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
+    }
+#endif
+
+    // Carica icona dalla risorsa PNG
+    int iconWidth, iconHeight, iconChannels;
+    unsigned char* iconData = stbi_load("Assets/Images/logo.png", &iconWidth, &iconHeight, &iconChannels, 4);
+    if (iconData) {
+        GLFWimage icon;
+        icon.width = iconWidth;
+        icon.height = iconHeight;
+        icon.pixels = iconData;
+        glfwSetWindowIcon(m_window, 1, &icon);
+        stbi_image_free(iconData);
+    }
+
+    return true;
 }
 
-void Window::pollEvents() const
-{
-	glfwPollEvents();
+bool Window::loadAppIcon(const char* iconPath) {
+    return true;
 }
 
-void Window::swapBuffers() const
-{
-	glfwSwapBuffers(m_window);
+void Window::setupBorderlessWindow() {
+    // Non più necessaria per finestra con bordi nativi
 }
 
-void Window::processInput() const{
-	if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-		glfwSetWindowShouldClose(m_window, true);
-
-	// Controlli per la rotazione
-	if (glfwGetKey(m_window, GLFW_KEY_UP) == GLFW_PRESS)
-		rotationX += rotationSpeed;
-	if (glfwGetKey(m_window, GLFW_KEY_DOWN) == GLFW_PRESS)
-		rotationX -= rotationSpeed;
-	if (glfwGetKey(m_window, GLFW_KEY_LEFT) == GLFW_PRESS)
-		rotationY -= rotationSpeed;
-	if (glfwGetKey(m_window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-		rotationY += rotationSpeed;
-	if (glfwGetKey(m_window, GLFW_KEY_PAGE_UP) == GLFW_PRESS)
-		rotationZ += rotationSpeed;
-	if (glfwGetKey(m_window, GLFW_KEY_PAGE_DOWN) == GLFW_PRESS)
-		rotationZ -= rotationSpeed;
-
-	// Controlli per la velocità di rotazione
-	if (glfwGetKey(m_window, GLFW_KEY_KP_ADD) == GLFW_PRESS)
-		rotationSpeed += 0.1f;
-	if (glfwGetKey(m_window, GLFW_KEY_KP_SUBTRACT) == GLFW_PRESS)
-		rotationSpeed = (rotationSpeed > 0.1f) ? rotationSpeed - 0.1f : 0.1f;
-
+void Window::processInput() {
+    if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+        // Non chiudere con ESC
+    }
 }
 
-void Window_framebufferSizeCallback(GLFWwindow* window, int width, int height) {
-	Window* m_window = static_cast<Window*>(glfwGetWindowUserPointer(window));
-	if (m_window) {
-		m_window->setResized();
-	}
+void Window::pollEvents() const {
+    glfwPollEvents();
+}
 
-	glViewport(0, 0, width, height);
+void Window::swapBuffers() const {
+    glfwSwapBuffers(m_window);
+}
+
+bool Window::shouldClose() const {
+    return glfwWindowShouldClose(m_window);
+}
+
+GLFWwindow* Window::getGLFWwindow() const {
+    return m_window;
 }

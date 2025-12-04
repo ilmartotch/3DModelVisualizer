@@ -46,7 +46,10 @@ add_executable(App
   
   # Utility
   "src/Source/stb_image_impl.cpp"
- "src/Source/ShadowFloor.cpp")
+ "src/Source/ShadowFloor.cpp"
+ "src/Include/Logger.h" "src/Source/Logger.cpp"
+ "src/Include/ConsoleWindow.h" "src/Source/ConsoleWindow.cpp"
+)
 
 # Trova pacchetti con vcpkg
 find_package(glfw3 CONFIG REQUIRED)
@@ -75,12 +78,23 @@ target_link_libraries(App PRIVATE
 )
 
 set(SHADERS_DIR ${CMAKE_SOURCE_DIR}/Shaders)
+set(ASSETS_IMAGES_DIR ${CMAKE_SOURCE_DIR}/Assets/Images)
 
 # Copia automatica degli shader nella cartella dell'eseguibile dopo il build
 add_custom_command(TARGET App POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${SHADERS_DIR}
         $<TARGET_FILE_DIR:App>/Shaders
+)
+
+# Copia automatica delle immagini (logo/icona) nella cartella dell'eseguibile
+add_custom_command(TARGET App POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        $<TARGET_FILE_DIR:App>/Assets/Images
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${ASSETS_IMAGES_DIR}/logo.png
+        $<TARGET_FILE_DIR:App>/Assets/Images/logo.png
+    COMMENT "Copying logo resources to build directory"
 )
 
 # Include directories
@@ -95,3 +109,17 @@ target_include_directories(App PRIVATE
 target_include_directories(App PRIVATE
   ${CMAKE_SOURCE_DIR}/Assets/Include
 )
+
+# Imposta l'icona dell'applicazione su Windows
+if(WIN32)
+    set(APP_ICON_PATH "${CMAKE_SOURCE_DIR}/Assets/Images/app_icon.ico")
+    if(EXISTS ${APP_ICON_PATH})
+        # Crea file RC per l'icona
+        configure_file(
+            "${CMAKE_SOURCE_DIR}/app_icon.rc.in"
+            "${CMAKE_BINARY_DIR}/app_icon.rc"
+            @ONLY
+        )
+        target_sources(App PRIVATE "${CMAKE_BINARY_DIR}/app_icon.rc")
+    endif()
+endif()

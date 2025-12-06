@@ -91,7 +91,6 @@ const int SIDEBAR_WIDTH = 300;
 bool showModelInfo = true;
 bool showSelectedModelPanel = false;
 static bool gShowConsole = false;
-static bool gShowLogger = false;
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
@@ -690,20 +689,27 @@ void handlePickingResult(const glm::vec3& idColor) {
         return;
     }
 
-    if (pickedId == gDirLightTargetObjectNumericId) {
-        sceneManager.selectObject(pickedId);
-        objectSelected = false; 
+    sceneManager.selectObject(pickedId);
+
+    bool isLight = (pickedId == gDirLightObjectNumericId);
+	bool isLightTarget = (pickedId == gDirLightTargetObjectNumericId);
+    objectSelected = !isLight;
+    showSelectedModelPanel = !isLight;
+    ImGuizmo::Enable(true);
+
+    if (isLight) {
+        objectSelected = true;
         showSelectedModelPanel = false;
         ImGuizmo::Enable(true);
         return;
     }
 
-    sceneManager.selectObject(pickedId);
-
-    bool isLight = (pickedId == gDirLightObjectNumericId);
-    objectSelected = !isLight;
-    showSelectedModelPanel = !isLight;
-    ImGuizmo::Enable(true);
+    if (isLightTarget) {
+        objectSelected = true;
+        showSelectedModelPanel = false;
+		ImGuizmo::Enable(true);
+        return;
+    }
 
     if (auto sel = sceneManager.getSelectedObject()) {
         displayedEulerAngles = glm::degrees(glm::eulerAngles(sel->getRotation()));
@@ -1789,25 +1795,6 @@ void renderSeparator() {
     ImGui::PopStyleColor();
 }
 
-// Logging & Console
-void renderSectionLoggingConsole() {
-    if (ImGui::CollapsingHeader("Logging & Console", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.50f, 0.70f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.40f, 0.60f, 0.80f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.20f, 0.40f, 0.60f, 1.0f));
-
-        if (ImGui::Button("Log Window", ImVec2(-1, 30))) {
-            gShowLogger = !gShowLogger;
-        }
-
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.60f, 0.80f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.70f, 0.90f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.50f, 0.70f, 1.0f));
-
-        ImGui::PopStyleColor(6);
-    }
-}
-
 // Grid Mode
 void renderSectionGridMode() {
     if (ImGui::CollapsingHeader("Grid Mode", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -2149,7 +2136,6 @@ void renderSectionActions() {
         shoeHelpWindow = !shoeHelpWindow;
     }
 
-    // Pulsante Console (prima era duplicato, ora è unico)
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.60f, 0.80f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.70f, 0.90f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.50f, 0.70f, 1.0f));
@@ -2183,7 +2169,6 @@ int main() {
     logger.SetGlfwWindow(win.getGLFWwindow());
     logger.SetAppVersion("0.1.0");
     logger.SetNotionFormUrl("");
-    logger.AddExtraSystemInfoLine("Build: Debug");
     logger.Log(Logger::Level::Info, "Applicazione avviata.");
 
     // Resto dell'inizializzazione invariato...
@@ -2220,15 +2205,6 @@ int main() {
             DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
         }
     #endif
-
-    ConsoleWindow::Get().RegisterCommand("echo", "Ripete gli argomenti forniti.", [](const std::vector<std::string>& args) {
-        std::string joined;
-        for (size_t i = 0; i < args.size(); ++i) {
-            if (i) joined += ' ';
-            joined += args[i];
-        }
-        ConsoleWindow::Get().PushConsoleLine("echo: " + joined);
-    });
 
     // Carica gli shader
     //logger.CaptureGpuInfo();
@@ -2973,30 +2949,13 @@ int main() {
         // Console Window
         if (gShowConsole) {
             ImGui::SetNextWindowSize(ImVec2(900, 550), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSizeConstraints(ImVec2(600, 400), ImVec2(FLT_MAX, FLT_MAX));
+            ImGui::SetNextWindowPos(
+                ImVec2(ImGui::GetMainViewport()->GetCenter().x - 450,
+                    ImGui::GetMainViewport()->GetCenter().y - 275),
+                ImGuiCond_FirstUseEver);
 
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
-            ImGui::PushStyleColor(ImGuiCol_Tab, ImVec4(0.25f, 0.25f, 0.27f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_TabActive, ImVec4(0.35f, 0.35f, 0.40f, 1.0f));
-
-            if (ImGui::Begin("Developer Console", &gShowConsole, ImGuiWindowFlags_NoCollapse)) {
-
-                if (ImGui::BeginTabBar("##DevTools", ImGuiTabBarFlags_None)) {
-
-                    // Tab Console Commands
-                    if (ImGui::BeginTabItem("Console")) {
-                        ConsoleWindow::Get().Draw();
-                        ImGui::EndTabItem();
-                    }
-
-                    ImGui::EndTabBar();
-                }
-
-                ImGui::End();
-            }
-
-            ImGui::PopStyleColor(2);
-            ImGui::PopStyleVar();
+            ConsoleWindow::Get().Draw(&gShowConsole);
         }
 
         // Finestra modale di errore
@@ -3218,10 +3177,6 @@ int main() {
 
             if (hovered) {
                 ImGui::SetTooltip("Apri form Bug Report");
-            }
-            if (clicked) {
-                // Genera il report e apre il form online (usa l’URL impostato con SetNotionFormUrl)
-                Logger::Get().ExportAndOpenReport(true);
             }
 
             ImGui::End();

@@ -7,9 +7,9 @@
 #include <functional>
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <imgui.h>
 
-// Forward dichiarazione GLFW
 struct GLFWwindow;
 
 class Logger final
@@ -28,81 +28,81 @@ public:
         Level level;
         std::chrono::system_clock::time_point timestamp;
         std::string text;
-        std::string formattedTime; // Precalcolata per ridurre costo in Draw
+        std::string formattedTime;
+        std::string source;
     };
 
     // Singleton
     static Logger& Get();
 
-    // Logging
+    // Loggin api
     void Log(Level level, std::string_view message);
+    void Log(Level level, std::string_view source, std::string_view message);
     void Logf(Level level, const char* fmt, ...);
 
-    // Finestra ImGui
-    void DrawLogWindow(bool* pOpen = nullptr);
+    // Macro-friendly
+    void Trace(std::string_view msg) { Log(Level::Trace, msg); }
+    void Info(std::string_view msg) { Log(Level::Info, msg); }
+    void Warn(std::string_view msg) { Log(Level::Warn, msg); }
+    void Error(std::string_view msg) { Log(Level::Error, msg); }
 
-    // Rendering custom (alternativa ad ImGui)
-    void Draw(const std::function<void(const Entry&)>& renderCallback) const;
+    // Data access
+    const std::deque<Entry>& GetEntries() const noexcept { return m_entries; }
+    std::size_t GetEntryCount() const noexcept { return m_entries.size(); }
 
-    // Bug report -> Markdown + clipboard + browser
-    bool ExportAndOpenReport(bool openBrowser = true);
+    // Entries filters
+    std::vector<const Entry*> GetFilteredEntries(
+        bool showTrace, bool showInfo, bool showWarn, bool showError,
+        const std::string& textFilter = "") const;
 
-    // Configurazioni
-    void SetMaxEntries(std::size_t maxEntries);
-    void SetNotionFormUrl(const std::string& url);
+	// Configuration
+    void SetMaxEntries(std::size_t max);
     void SetGlfwWindow(GLFWwindow* window);
     void SetAppVersion(std::string_view version);
-    void AddExtraSystemInfoLine(std::string_view line); // linee aggiuntive opzionali
-    //void CaptureGpuInfo(); // Va chiamata dopo avere un contesto OpenGL valido
+    void SetNotionFormUrl(const std::string& url);
+    void AddExtraSystemInfo(std::string_view line);
     void Clear();
 
-    // Accesso buffer
-    const std::deque<Entry>& Entries() const noexcept { return m_entries; }
-    std::size_t Size() const noexcept { return m_entries.size(); }
-    std::size_t Capacity() const noexcept { return m_maxEntries; }
+    // Export
+    std::string BuildMarkdownReport() const;
+    std::string BuildPlainTextLog(bool includeTimestamp = true, bool includeLevel = true) const;
+    bool CopyToClipboard(const std::string& text) const;
+    bool OpenUrl(const std::string& url) const;
+    bool ExportAndOpenBugReport();
 
-    Logger() = default;
-
+	// Utilities
     static const char* LevelToString(Level level) noexcept;
     static ImVec4 LevelToColor(Level level) noexcept;
-
-    void AppendEntry(Entry&& e);
-    std::string BuildMarkdownReport() const;
-
-    // Clipboard & Browser
-    bool CopyToClipboardUtf8(const std::string& utf8) const;
-    bool OpenUrlInBrowser(const char* url) const;
-
-    // Helpers
-    std::string BuildSystemInfoSection() const;
-    std::string DetectOsString() const noexcept;
+    static const char* LevelToIcon(Level level) noexcept;
 
 private:
+    Logger();
+    ~Logger() = default;
+    Logger(const Logger&) = delete;
+    Logger& operator=(const Logger&) = delete;
+
+    void AppendEntry(Entry&& e);
+    std::string FormatTimestamp(const std::chrono::system_clock::time_point& tp) const;
+    std::string BuildSystemInfo() const;
+    std::string DetectOS() const noexcept;
+
     std::deque<Entry> m_entries;
-    std::size_t m_maxEntries = 100;
-    std::string m_notionFormUrl;
+    mutable std::mutex m_mutex;
+    std::size_t m_maxEntries = 1000;
+
     GLFWwindow* m_glfwWindow = nullptr;
-
-    // Opzioni UI
-    bool m_autoScroll = true;
-    bool m_showTime = true;
-    bool m_showLevel = true;
-    char m_filter[128] = { 0 };
-
-    // System info / App
     std::string m_appVersion = "0.0.0";
-    std::string m_gpuVendor;
-    std::string m_gpuRenderer;
-    std::string m_glVersion;
-    std::vector<std::string> m_extraInfo;
-
-    // Stato operazioni
-    float m_lastReportTime = 0.0f; // usato per feedback
-    bool m_lastReportSuccess = false;
+    std::string m_notionFormUrl;
+    std::vector<std::string> m_extraSystemInfo;
 };
 
-// Macros di convenienza
-#define LOG_TRACE(msg) Logger::Get().Log(Logger::Level::Trace, (msg))
-#define LOG_INFO(msg)  Logger::Get().Log(Logger::Level::Info,  (msg))
-#define LOG_WARN(msg)  Logger::Get().Log(Logger::Level::Warn,  (msg))
-#define LOG_ERROR(msg) Logger::Get().Log(Logger::Level::Error, (msg))
+// Macro
+#define LOG_TRACE(msg) Logger::Get().Trace(msg)
+#define LOG_INFO(msg)  Logger::Get().Info(msg)
+#define LOG_WARN(msg)  Logger::Get().Warn(msg)
+#define LOG_ERROR(msg) Logger::Get().Error(msg)
+
+#define LOG_TRACEF(fmt, ...) Logger::Get().Logf(Logger::Level::Trace, fmt, __VA_ARGS__)
+#define LOG_INFOF(fmt, ...)  Logger::Get().Logf(Logger::Level::Info, fmt, __VA_ARGS__)
+#define LOG_WARNF(fmt, ...)  Logger::Get().Logf(Logger::Level::Warn, fmt, __VA_ARGS__)
+#define LOG_ERRORF(fmt, ...) Logger::Get().Logf(Logger::Level::Error, fmt, __VA_ARGS__)

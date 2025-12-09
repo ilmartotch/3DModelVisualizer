@@ -159,6 +159,14 @@ public:
     // Helper NON invasivo: stride in float del layout corrente (6 o 8)
     inline unsigned int getVertexStrideFloats() const { return hasUVs ? 8u : 6u; }
 
+    size_t getVertexCount() const {
+        return m_vertices.size() / (hasUVs ? 8 : 6);
+    }
+
+    size_t getIndexCount() const {
+        return m_indices.size();
+    }
+
 protected:
     GLuint m_vao;
     GLuint m_vbo;

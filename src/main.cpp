@@ -555,8 +555,7 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
         gWindowWidthLogical = ww;
         gWindowHeightLogical = wh;
 
-        std::cout << "[WINDOW] Resize: Logical(" << gWindowWidthLogical << "x" << gWindowHeightLogical
-            << ") Framebuffer(" << gFramebufferWidth << "x" << gFramebufferHeight << ")" << std::endl;
+        Logger::Get().LogWindowResize(gWindowWidthLogical, gWindowHeightLogical, gFramebufferWidth, gFramebufferHeight);
 
         glViewport(0, 0, gFramebufferWidth, gFramebufferHeight);
 
@@ -841,7 +840,8 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
 // Callback inizializzazione piking system
 void initializePickingSystem() {
     if (!pickingBuffer.initialize(gFramebufferWidth, gFramebufferHeight)) {
-        std::cerr << "Errore nell'inizializzazione del buffer di picking." << std::endl;
+        Logger::Get().Log(Logger::Level::Error, Logger::Category::System, "Errore nell'inizializzazione del buffer di picking.");
+        return;
     }
 
     pickingShader = LoadShader(
@@ -850,9 +850,11 @@ void initializePickingSystem() {
     );
 
     if (pickingShader == 0) {
-        std::cerr << "Errore nel caricamento dello shader di picking." << std::endl;
+        Logger::Get().LogShaderError("Picking", "Errore nel caricamento dello shader di picking.");
         return;
     }
+
+    Logger::Get().LogShaderLoaded("Picking");
 }
 
 void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection) {
@@ -968,7 +970,6 @@ std::string openFolderDialog() {
                     PWSTR pszPath;
                     hr = psi->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
                     if (SUCCEEDED(hr)) {
-                        // Converti da WCHAR* a std::string
                         int size = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1,
                             nullptr, 0, nullptr, nullptr);
                         selectedPath.resize(size - 1);
@@ -1004,7 +1005,7 @@ void renderSceneControlPanel() {
                 exportFormatDialog.open(folderPath);
             }
             else {
-                std::cout << "Export cancellato dall'utente" << std::endl;
+                Logger::Get().Log(Logger::Level::Info, Logger::Category::Export, "Export cancellato dall'utente");
             }
         }
 
@@ -1650,7 +1651,7 @@ void renderExportFormatDialog() {
             std::string filename = "Scene_" + ss.str() + selectedFmt.extension;
             std::string outputPath = exportFormatDialog.exportFolder + "/" + filename;
 
-            std::cout << "[EXPORT] Inizio export in formato: " << selectedFmt.name << std::endl;
+            Logger::Get().LogExportStarted(selectedFmt.name, outputPath);
 
             // Determina i flag effettivi
             bool embed = exportFormatDialog.embedTextures && selectedFmt.supportsEmbeddedTextures && selectedFmt.supportsTextures;
@@ -1666,6 +1667,14 @@ void renderExportFormatDialog() {
             );
 
             if (result.success) {
+                Logger::Get().LogExportCompleted(
+                    outputPath,
+                    result.fileSize,
+                    result.exportTimeSeconds,
+                    result.totalVertices,
+                    result.totalFaces,
+                    result.totalMaterials
+                );
                 successDialog.show = true;
                 successDialog.title = "Export Successful";
                 successDialog.message = "Scena esportata con successo!";
@@ -1704,6 +1713,8 @@ void renderExportFormatDialog() {
                 successDialog.details = details.str();
             }
             else {
+                Logger::Get().LogExportError(outputPath, result.errorMessage);
+
                 errorDialog.show = true;
                 errorDialog.title = "Export Error";
                 errorDialog.message = result.errorMessage;
@@ -2029,6 +2040,7 @@ void renderSectionSceneObjects() {
                 sceneManager.selectObject(obj->getId());
                 objectSelected = true;
                 showSelectedModelPanel = true;
+                showDirectionalLightWindow = false;
             }
 
             if (ImGui::BeginPopupContextItem()) {
@@ -2072,21 +2084,6 @@ void renderSectionSceneObjects() {
         ImGui::EndChild();
 
         ImGui::Checkbox("Enable Picking", &pickingEnabled);
-    }
-}
-
-// Rendering
-void renderSectionRendering() {
-    if (ImGui::CollapsingHeader("Rendering")) {
-        static const char* renderModes[] = { "Solid", "Wireframe", "Solid + Wireframe" };
-        ImGui::PushItemWidth(-1);
-        if (ImGui::Combo("##RenderMode", &currentRenderMode, renderModes, IM_ARRAYSIZE(renderModes))) {
-            Model::RenderMode mode = static_cast<Model::RenderMode>(currentRenderMode);
-            if (modelManager.hasActiveModel()) {
-                modelManager.setActiveModelRenderMode(mode);
-            }
-        }
-        ImGui::PopItemWidth();
     }
 }
 
@@ -2147,11 +2144,21 @@ void renderSectionActions() {
     ImGui::PopStyleColor(3);
 }
 
+static void OpenUrlInBrowser(const char* url) {
+    #ifdef _WIN32
+	ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+    #endif
+}
+
 int main() {
-    std::cout << std::filesystem::current_path() << std::endl;
+    Logger::Get().Log(Logger::Level::Trace, Logger::Category::System, 
+        "Working directory: " + std::filesystem::current_path().string());
 
     Window win;
-    if (!win.initialize(gFramebufferWidth, gFramebufferHeight, "3D Modeler")) return -1;
+    if (!win.initialize(gFramebufferWidth, gFramebufferHeight, "3D Modeler")) {
+        Logger::Get().Log(Logger::Level::Error, Logger::Category::Window, "Errore inizializzazione finestra");
+        return -1;
+    }
 
     // Carica l'icona della finestra
     GLFWimage icon;
@@ -2163,13 +2170,16 @@ int main() {
         icon.pixels = iconData;
         glfwSetWindowIcon(win.getGLFWwindow(), 1, &icon);
         stbi_image_free(iconData);
+        Logger::Get().Log(Logger::Level::Trace, Logger::Category::System, "Icona finestra caricata");
+    } else {
+        Logger::Get().Log(Logger::Level::Warn, Logger::Category::System, "Impossibile caricare icona finestra");
     }
 
     Logger& logger = Logger::Get();
     logger.SetGlfwWindow(win.getGLFWwindow());
     logger.SetAppVersion("0.1.0");
     logger.SetNotionFormUrl("");
-    logger.Log(Logger::Level::Info, "Applicazione avviata.");
+    logger.Log(Logger::Level::Info, Logger::Category::App, "Applicazione avviata.");
 
     // Resto dell'inizializzazione invariato...
     glfwSetMouseButtonCallback(win.getGLFWwindow(), mouseButtonCallback);
@@ -2186,7 +2196,7 @@ int main() {
 
     ApplayModernRoundedStyle();
 
-    // Customizza la title bar nativa (approccio A)
+    // Customizza la title bar nativa
     #ifdef _WIN32
         HWND hwnd = glfwGetWin32Window(win.getGLFWwindow());
         if (hwnd) {
@@ -2194,8 +2204,6 @@ int main() {
             BOOL useDarkMode = TRUE;
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
 
-            // Personalizza i colori della title bar (Windows 11+)
-            // Colore viola scuro coordinato con lo stile ImGui
             COLORREF titleBarColor = RGB(45, 45, 50);
             COLORREF titleTextColor = RGB(160, 140, 200);
             COLORREF borderColor = RGB(80, 80, 85);
@@ -2207,36 +2215,32 @@ int main() {
     #endif
 
     // Carica gli shader
-    //logger.CaptureGpuInfo();
-    logger.Log(Logger::Level::Info, "Rilevate informazioni GPU.");
+    logger.Log(Logger::Level::Info, Logger::Category::System, "Rilevate informazioni GPU.");
 
     GLuint shader = LoadShader("Shaders/Object.vert", "Shaders/Object.frag");
     if (shader == 0) {
-        logger.Log(Logger::Level::Error, "Errore nel caricamento Object shader.");
-        std::cerr << "Errore nel caricamento degli shader." << std::endl;
+        logger.LogShaderError("Object", "Errore nel caricamento degli shader.");
         return -1;
     }
     else {
-        logger.Log(Logger::Level::Info, "Shader Object caricato.");
+        logger.LogShaderLoaded("Object");
     }
 
     GLuint gridShader = LoadShader("Shaders/Grid.vert", "Shaders/Grid.frag");
     if (gridShader == 0) {
-        logger.Log(Logger::Level::Error, "Errore nel caricamento Grid shader.");
-        std::cerr << "Errore nel caricamento degli shader." << std::endl;
+        logger.LogShaderError("Grid", "Errore nel caricamento degli shader.");
         return -1;
     }
     else {
-        logger.Log(Logger::Level::Info, "Shader Grid caricato.");
+        logger.LogShaderLoaded("Grid");
     }
 
     GLuint dirShadowDepthShader = LoadShader("Shaders/DirShadowDepth.vert", "Shaders/DirShadowDepth.frag");
     if (dirShadowDepthShader == 0) {
-        logger.Log(Logger::Level::Warn, "Shader depth luce non caricato.");
-        std::cerr << "Errore shader depth luce\n";
+        logger.LogShaderError("DirShadowDepth", "Shader depth luce non caricato.");
     }
     else {
-        logger.Log(Logger::Level::Info, "Shader depth luce caricato.");
+        logger.LogShaderLoaded("DirShadowDepth");
     }
 
     // Registra i modelli base
@@ -2247,28 +2251,26 @@ int main() {
 
     // Inizializza i modelli registrati
     modelManager.initializeModels();
-    logger.Log(Logger::Level::Info, "Modelli base registrati.");
+    logger.Log(Logger::Level::Info, Logger::Category::Model, "Modelli base registrati e inizializzati.");
 
     // Inizializza il sistema di picking
     initializePickingSystem();
-    logger.Log(Logger::Level::Info, "Picking inizializzato.");
+    logger.Log(Logger::Level::Info, Logger::Category::System, "Sistema di picking inizializzato.");
 
     // Imposta il modello della griglia
     Grid grid;
     grid.initialize();
-    std::string selectedModel = "";
-    logger.Log(Logger::Level::Info, "Griglia inizializzata.");
+    logger.Log(Logger::Level::Info, Logger::Category::Grid, "Griglia inizializzata.");
 
     // Gizmo luce direzionale
     glm::vec3 lightInitialPos = gDirLight.position;
     auto lightObj = sceneManager.addSystemObject("Sphere", lightInitialPos, gDirLightObjectNumericId, "Directional Light");
     if (lightObj) {
         sceneManager.updateObjectScale(gDirLightObjectNumericId, glm::vec3(0.15f));
-        logger.Log(Logger::Level::Info, "Oggetto luce direzionale aggiunto.");
+        logger.Log(Logger::Level::Info, Logger::Category::Light, "Oggetto luce direzionale aggiunto.");
     }
 
     {
-        // Posizione iniziale del bersaglio: usa gDirLight.target ma forza y a 0
         gDirLight.target = ClampTargetOnFloor(gDirLight.target);
         auto targetObj = sceneManager.addSystemObject("ImagePlane", gDirLight.target, gDirLightTargetObjectNumericId, "Light Target");
         if (targetObj) {
@@ -2278,7 +2280,7 @@ int main() {
             if (auto t = findObjectById(gDirLightTargetObjectNumericId)) {
                 t->setOverrideColor(glm::vec4(1.0f, 140.0f / 255.0f, 0.0f, 1.0f));
             }
-            logger.Log(Logger::Level::Info, "Target luce direzionale aggiunto.");
+            logger.Log(Logger::Level::Info, Logger::Category::Light, "Target luce direzionale aggiunto.");
         }
     }
 
@@ -2363,13 +2365,6 @@ int main() {
             renderSeparator();
             ImGui::Spacing();
 
-            // Rendering
-            renderSectionRendering();
-
-            ImGui::Spacing();
-            renderSeparator();
-            ImGui::Spacing();
-
             // Camera
             renderSectionCamera();
 
@@ -2401,16 +2396,7 @@ int main() {
             float detailsWidth = std::clamp(vw * 0.25f, 300.0f, 500.0f);
             ImVec2 minSize = ImVec2(300, 550);
             ImGui::SetNextWindowSizeConstraints(minSize, ImVec2(FLT_MAX, FLT_MAX));
-
-            if (!pinSelectedModelPanel) {
-                ImVec2 anchorPos(ImGui::GetMainViewport()->Pos.x + vw - 12.0f,
-                    ImGui::GetMainViewport()->Pos.y + 60.0f);
-                ImGui::SetNextWindowPos(anchorPos, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
-                ImGui::SetNextWindowSize(ImVec2(detailsWidth, 0.0f), ImGuiCond_Always);
-            }
-            else {
-                ImGui::SetNextWindowSize(ImVec2(detailsWidth, 0.0f), ImGuiCond_FirstUseEver);
-            }
+            ImGui::SetNextWindowSize(ImVec2(detailsWidth, 0.0f), ImGuiCond_Always);
 
             if (ImGui::Begin("Selected Object", &showSelectedModelPanel)) {
                 auto selectedObj = sceneManager.getSelectedObject();
@@ -2859,6 +2845,48 @@ int main() {
         ImGui::Text("FPS: %.1f", fps);
         ImGui::End();
 
+        {
+            const float pad = 8.0f;
+            const ImVec2 btnSize(110, 50);
+
+            ImGui::SetNextWindowPos(
+                ImVec2(ImGui::GetIO().DisplaySize.x - btnSize.x - pad,
+                    ImGui::GetIO().DisplaySize.y - btnSize.y - pad),
+                ImGuiCond_Always
+            );
+            ImGui::SetNextWindowSize(btnSize, ImGuiCond_Always);
+
+            ImGuiWindowFlags flags =
+                ImGuiWindowFlags_NoDecoration |
+                ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoSavedSettings |
+                ImGuiWindowFlags_NoScrollWithMouse |
+                ImGuiWindowFlags_NoScrollbar |
+                ImGuiWindowFlags_NoBackground;
+
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+
+            if (ImGui::Begin("##BugReportBtn", nullptr, flags)) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.60f, 0.80f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.70f, 0.90f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.50f, 0.70f, 1.0f));
+
+                // Pulsante che occupa TUTTA la finestra
+                if (ImGui::Button("Report Bug", btnSize)) {
+                    OpenUrlInBrowser("https://github.com/ilmartotch/BallOfWoolProject/issues/new");
+                }
+
+                ImGui::PopStyleColor(3);
+
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Apri Bug Report su GitHub");
+                }
+            }
+            ImGui::End();
+
+            ImGui::PopStyleVar();
+        }
+
         if (showFiniteSpaceInfoWindow && !gInfiniteGrid) {
             ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 340, 60), ImGuiCond_Once);
             ImGui::SetNextWindowSize(ImVec2(330, 0), ImGuiCond_Always);
@@ -3131,55 +3159,6 @@ int main() {
             }
             ImGui::PopStyleColor(2);
             ImGui::PopStyleVar();
-        }
-
-        {
-            ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoSavedSettings |
-                ImGuiWindowFlags_NoBackground |
-                ImGuiWindowFlags_NoScrollWithMouse |
-                ImGuiWindowFlags_NoCollapse;
-            const float pad = 16.0f;
-            const ImVec2 btnSize(56, 56);
-
-            ImVec2 vpPos = ImGui::GetMainViewport()->Pos;
-            ImVec2 vpSize = ImGui::GetMainViewport()->Size;
-            ImVec2 winPos = ImVec2(vpPos.x + vpSize.x - btnSize.x - pad,  // X: angolo in basso a destra
-                vpPos.y + vpSize.y - btnSize.y - pad); // Y
-
-            ImGui::SetNextWindowPos(winPos, ImGuiCond_Always);
-            ImGui::SetNextWindowSize(btnSize, ImGuiCond_Always);
-            ImGui::Begin("##BugReportFloating", nullptr, flags);
-
-            // Area cliccabile
-            ImGui::InvisibleButton("##bug_btn", btnSize);
-            bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
-            bool clicked = ImGui::IsItemClicked();
-
-            // Disegno cerchio e icona
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImVec2 min = ImGui::GetItemRectMin();
-            ImVec2 max = ImGui::GetItemRectMax();
-            ImVec2 center = ImVec2(0.5f * (min.x + max.x), 0.5f * (min.y + max.y));
-            float radius = 0.5f * btnSize.x;
-
-            ImU32 bgCol = hovered ? IM_COL32(230, 90, 60, 255) : IM_COL32(255, 120, 80, 255);
-            ImU32 bdCol = IM_COL32(35, 35, 35, 255);
-            dl->AddCircleFilled(center, radius, bgCol, 64);
-            dl->AddCircle(center, radius, bdCol, 64, 2.0f);
-
-            // Semplice icona “!” centrata
-            const char* icon = "!";
-            ImVec2 tSize = ImGui::CalcTextSize(icon);
-            ImVec2 tPos(center.x - tSize.x * 0.5f, center.y - tSize.y * 0.65f);
-            dl->AddText(tPos, IM_COL32(255, 255, 255, 255), icon);
-
-            if (hovered) {
-                ImGui::SetTooltip("Apri form Bug Report");
-            }
-
-            ImGui::End();
         }
 
         // Aggiorna Shadow System (matrici luce dinamiche)

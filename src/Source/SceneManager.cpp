@@ -1,13 +1,15 @@
 #include "../Include/SceneManager.h"
 #include "../src/Include/SceneObject.h"
 #include "../src/Include/ModelManager.h"
+#include "../src/Include/Logger.h"
 #include <iostream>
 #include <cstdlib>
 
 std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelName, const glm::vec3& pos) {
     auto model = modelManager.getModel(modelName);
     if (!model) {
-        std::cerr << "Modello non trovato: " << modelName << std::endl;
+        Logger::Get().Log(Logger::Level::Error, Logger::Category::Scene,
+                          "Modello non trovato: " + modelName);
         return nullptr;
     }
 
@@ -17,6 +19,13 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
     obj->setPosition(finalPos);
     obj->setInitialPosition(finalPos);
     objects.push_back(obj);
+    size_t vertexCount = model->getVertexCount();
+    size_t indexCount = model->getIndexCount();
+    bool hasTexture = model->hasTexture();
+    
+    Logger::Get().LogModelAdded(obj->getName(), obj->getId(), vertexCount, indexCount, hasTexture);
+    Logger::Get().LogObjectAdded(obj->getName(), obj->getId());
+
     return obj;
 }
 
@@ -42,7 +51,6 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
 
 // Implementazione del metodo removeObject
 bool SceneManager::removeObject(unsigned int id) {
-    // Trova l'oggetto da rimuovere
     auto it = std::find_if(objects.begin(), objects.end(),
                           [id](const std::shared_ptr<SceneObject>& obj) {
                               return obj->getId() == id;
@@ -57,6 +65,9 @@ bool SceneManager::removeObject(unsigned int id) {
         selectedObjectId = 0;
     }
     
+    std::string name = (*it)->getName();
+    Logger::Get().LogObjectRemoved(name, id);
+
     // Rimuovi l'oggetto dalla lista
     objects.erase(it);
     
@@ -65,20 +76,24 @@ bool SceneManager::removeObject(unsigned int id) {
 
 void SceneManager::selectObject(unsigned int id) {
     deselectAll();
-
-    auto it = std::find_if(objects.begin(), objects.end(),
-        [id](const auto& obj) { return obj->getId() == id; });
-
-    if (it != objects.end()) {
-        selectedObject = *it;
-        selectedObject->setSelected(true);
+    for (auto& obj : objects) {
+        if (obj->getId() == id) {
+            obj->setSelected(true);
+            selectedObjectId = id;
+            Logger::Get().LogObjectSelected(obj->getName(), id);
+            return;
+        }
     }
 }
 
 void SceneManager::deselectAll() {
-    if (selectedObject) {
-        selectedObject->setSelected(false);
-        selectedObject = nullptr;
+    bool hadSelection = (selectedObjectId != 0);
+    for (auto& obj : objects) {
+        obj->setSelected(false);
+    }
+    selectedObjectId = 0;
+    if (hadSelection) {
+        Logger::Get().LogObjectDeselected();
     }
 }
 
@@ -366,8 +381,14 @@ void SceneManager::resetObjectToInitialPosition(unsigned int id) {
 
 // Rinomina l'oggetto
 void SceneManager::renameObject(unsigned int id, const std::string& newName) {
-    auto obj = getObjectById(id);
-    if (obj) obj->setName(newName);
+    for (auto& obj : objects) {
+        if (obj->getId() == id) {
+            std::string oldName = obj->getName();
+            obj->setName(newName);
+            Logger::Get().LogObjectRenamed(oldName, newName, id);
+            return;
+        }
+    }
 }
 
 // Implementazione del metodo di duplicazione

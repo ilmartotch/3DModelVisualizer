@@ -1,6 +1,7 @@
 ﻿#include "../Include/ModelLoader.h"
 #include "../Include/TextureManager.h"
 #include "../../Assets/Include/ImagePlaneModel.h"
+#include "../Include/Logger.h"
 #include <iostream>
 #include <filesystem>
 #include <stb_image.h>
@@ -8,6 +9,7 @@
 #include <algorithm>
 #include <thread>
 #include <sstream>
+#include <chrono>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -1134,7 +1136,7 @@ bool ModelLoader::openImageFile(ModelManager& modelManager, SceneManager& sceneM
     modelManager.registerModel(model);
     model->initialize();
 
-    // Nota: cameraTarget in questa firma lo usiamo come spawnPos calcolato dal chiamante
+    // CameraTarget in questa firma lo usiamo come spawnPos calcolato dal chiamante
     glm::vec3 spawnPos = cameraTarget;
 
     // Crea oggetto scena
@@ -1163,84 +1165,99 @@ bool ModelLoader::openModelFileAdvanced(
     bool& objectSelected, 
     bool& showSelectedModelPanel,
     LoadMode mode,
-    ProgressCallback progressCallback) {
+    ProgressCallback progressCallback) 
+{
+    #ifdef _WIN32
+        s_progressCallback = progressCallback;
+        reportProgress(0.05f, "Waiting for file selection...");
 
-#ifdef _WIN32
-    s_progressCallback = progressCallback;
-    reportProgress(0.05f, "Waiting for file selection...");
+        OPENFILENAME ofn;
+        char szFile[260] = { 0 };
 
-    OPENFILENAME ofn;
-    char szFile[260] = { 0 };
+        ZeroMemory(&ofn, sizeof(ofn));
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = glfwGetWin32Window(glfwGetCurrentContext());
+        ofn.lpstrFile = szFile;
+        ofn.nMaxFile = sizeof(szFile);
+        ofn.lpstrFilter = "3D Models\0*.obj;*.fbx;*.dae;*.3ds;*.gltf;*.glb\0All Files\0*.*\0";
+        ofn.nFilterIndex = 1;
+        ofn.lpstrFileTitle = NULL;
+        ofn.nMaxFileTitle = 0;
+        ofn.lpstrInitialDir = NULL;
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
-    ZeroMemory(&ofn, sizeof(ofn));
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = glfwGetWin32Window(glfwGetCurrentContext());
-    ofn.lpstrFile = szFile;
-    ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = "3D Models\0*.obj;*.fbx;*.dae;*.3ds;*.gltf;*.glb\0All Files\0*.*\0";
-    ofn.nFilterIndex = 1;
-    ofn.lpstrFileTitle = NULL;
-    ofn.nMaxFileTitle = 0;
-    ofn.lpstrInitialDir = NULL;
-    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+        if (!GetOpenFileName(&ofn)) {
+            s_progressCallback = nullptr;
+            return false;
+        }
 
-    if (!GetOpenFileName(&ofn)) {
+        std::string filePath = ofn.lpstrFile;
+        reportProgress(0.15f, "Loading model...");
+        auto model = loadModel(filePath);
+        if (!model) {
+            s_progressCallback = nullptr;
+            return false;
+        }
+
+        reportProgress(0.55f, "Initializing GPU buffers...");
+        modelManager.registerModel(model);
+        model->initialize();
+
+        glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
+            cameraPos, cameraTarget, 0.5f, 1.0f);
+
+        bool success = false;
+
+        if (mode == LoadMode::SINGLE_OBJECT) {
+            auto newObj = sceneManager.addObject(model->getName(), spawnPos);
+            if (newObj) {
+                sceneManager.selectObject(newObj->getId());
+                objectSelected = true;
+                showSelectedModelPanel = true;
+                success = true;
+            }
+        } else if (mode == LoadMode::SEPARATE_MESHES) {
+            std::shared_ptr<SceneObject> firstObject;
+            reportProgress(0.70f, "Creating separate mesh objects...");
+            createSeparateMeshObjects(model, modelManager, sceneManager, spawnPos, firstObject);
+            if (firstObject) {
+                sceneManager.selectObject(firstObject->getId());
+                objectSelected = true;
+                showSelectedModelPanel = true;
+                success = true;
+            }
+        } else {
+            auto newObj = sceneManager.addObject(model->getName(), spawnPos);
+            if (newObj) {
+                sceneManager.selectObject(newObj->getId());
+                objectSelected = true;
+                showSelectedModelPanel = true;
+                success = true;
+            }
+        }
+
+        reportProgress(0.95f, "Finalizing...");
+        reportProgress(1.0f, "Done");
         s_progressCallback = nullptr;
+        
+        size_t meshCount = model->getMeshCount();
+        size_t totalVertices = 0;
+        size_t totalIndices = 0;
+        for (const auto& mesh : model->getMeshes()) {
+            totalVertices += mesh.vertices.size() / 3;
+            totalIndices += mesh.indices.size();
+        }
+
+        if (success) {
+            Logger::Get().LogModelLoaded(filePath, meshCount, totalVertices, totalIndices, 0.0f);
+        } else {
+            Logger::Get().LogModelLoadError(filePath, "Unknown error");
+        }
+        
+        return success;
+    #else
+        (void)modelManager; (void)sceneManager; (void)cameraPos; (void)cameraTarget; (void)objectSelected; (void)showSelectedModelPanel; (void)mode; (void)progressCallback;
+        std::cerr << "openModelFileAdvanced non implementato per questa piattaforma." << std::endl;
         return false;
-    }
-
-    std::string filePath = ofn.lpstrFile;
-    reportProgress(0.15f, "Loading model...");
-    auto model = loadModel(filePath);
-    if (!model) {
-        s_progressCallback = nullptr;
-        return false;
-    }
-
-    reportProgress(0.55f, "Initializing GPU buffers...");
-    modelManager.registerModel(model);
-    model->initialize();
-
-    glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
-        cameraPos, cameraTarget, 0.5f, 1.0f);
-
-    bool success = false;
-
-    if (mode == LoadMode::SINGLE_OBJECT) {
-        auto newObj = sceneManager.addObject(model->getName(), spawnPos);
-        if (newObj) {
-            sceneManager.selectObject(newObj->getId());
-            objectSelected = true;
-            showSelectedModelPanel = true;
-            success = true;
-        }
-    } else if (mode == LoadMode::SEPARATE_MESHES) {
-        std::shared_ptr<SceneObject> firstObject;
-        reportProgress(0.70f, "Creating separate mesh objects...");
-        createSeparateMeshObjects(model, modelManager, sceneManager, spawnPos, firstObject);
-        if (firstObject) {
-            sceneManager.selectObject(firstObject->getId());
-            objectSelected = true;
-            showSelectedModelPanel = true;
-            success = true;
-        }
-    } else { // BY_MATERIAL (non implementato, fallback a SINGLE)
-        auto newObj = sceneManager.addObject(model->getName(), spawnPos);
-        if (newObj) {
-            sceneManager.selectObject(newObj->getId());
-            objectSelected = true;
-            showSelectedModelPanel = true;
-            success = true;
-        }
-    }
-
-    reportProgress(0.95f, "Finalizing...");
-    reportProgress(1.0f, "Done");
-    s_progressCallback = nullptr;
-    return success;
-#else
-    (void)modelManager; (void)sceneManager; (void)cameraPos; (void)cameraTarget; (void)objectSelected; (void)showSelectedModelPanel; (void)mode; (void)progressCallback;
-    std::cerr << "openModelFileAdvanced non implementato per questa piattaforma." << std::endl;
-    return false;
-#endif
+    #endif
 }

@@ -4,7 +4,7 @@
 
 class ShadowFloor : public Model {
 public:
-    ShadowFloor(const std::string& name = "Floor");
+    ShadowFloor(const std::string& name = "ShadowFloor");
     virtual ~ShadowFloor();
 
     virtual void initialize() override;

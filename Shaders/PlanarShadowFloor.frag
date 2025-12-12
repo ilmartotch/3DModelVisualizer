@@ -1,4 +1,4 @@
-#version 330 core
+#version 450 core
 
 in VS_OUT {
     vec3 worldPos;
@@ -6,7 +6,8 @@ in VS_OUT {
 
 out vec4 FragColor;
 
-uniform sampler2DShadow uShadowMap;
+uniform vec3 uBackgroundColor;
+uniform sampler2D uShadowMap;
 uniform mat4 lightSpaceMatrix;
 uniform int  uUseShadowMap;
 uniform int  uShadowMapSize;
@@ -33,14 +34,12 @@ float computeShadowPlanar(vec3 worldPos) {
         return 0.0;
     }
 
-    projCoords = projCoords * 0.5 + 0.5;
+    vec3 uv = projCoords * 0.5 + 0.5;
 
     vec3 N = vec3(0, 1, 0);
     float ndotl = max(dot(N, normalize(uLightDir)), 0.0);
 
-    float bias = max(0.05 * (1.0 - ndotl), 0.005);
-    float jitter = (randHash2(projCoords.xy * 199.0) - 0.5) * 0.002;
-    bias += jitter;
+    float bias = max(0.005 * (1.0 - ndotl), 0.0005);
 
     float shadow = 0.0;
     float texel = 1.0 / float(uShadowMapSize);
@@ -49,20 +48,20 @@ float computeShadowPlanar(vec3 worldPos) {
     for (int x = -2; x <= 2; ++x) {
         for (int y = -2; y <= 2; ++y) {
             vec2 offset = vec2(x, y) * texel * radius;
-            float visibility = texture(uShadowMap, vec3(projCoords.xy + offset, projCoords.z - bias));
-            shadow += (1.0 - visibility); // Accumula ombra
+
+            float depth = texture(uShadowMap, uv.xy + offset).r;
+            shadow += (depth + bias) < uv.z ? 1.0 : 0.0;
         }
     }
     shadow /= 25.0;
     shadow = pow(clamp(shadow, 0.0, 1.0), 1.1);
-    
-    return shadow; // 0.0 = no shadow, 1.0 = full shadow
+
+    return shadow; // 0 = no shadow, 1 = full shadow
 }
 
 void main() {
     float shadow = computeShadowPlanar(fs_in.worldPos);
-
-    // Genera colore moltiplicativo: scurisce proporzionalmente all'ombra
-    float factor = clamp(1.0 - uShadowStrength * shadow, 0.0, 1.0);
-    FragColor = vec4(vec3(factor), 1.0);
+    float shade = clamp(1.0 - uShadowStrength * shadow, 0.0, 1.0);
+    vec3 color = uBackgroundColor * shade;
+    FragColor = vec4(color, 1.0);
 }

@@ -46,8 +46,11 @@ void Grid::render(GLuint shader,
     // Matrici inverse
     glm::mat4 invView = glm::inverse(view);
     glm::mat4 invProjection = glm::inverse(projection);
+	glm::mat4 viewProjectionMatrix = projection * view;
+
     glUniformMatrix4fv(glGetUniformLocation(shader, "invView"), 1, GL_FALSE, glm::value_ptr(invView));
     glUniformMatrix4fv(glGetUniformLocation(shader, "invProjection"), 1, GL_FALSE, glm::value_ptr(invProjection));
+    glUniformMatrix4fv(glGetUniformLocation(shader, "viewProjectionMatrix"), 1, GL_FALSE, glm::value_ptr(viewProjectionMatrix));
     glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, &cameraPos[0]);
 
     // Uniform modalità/parametri griglia
@@ -59,13 +62,12 @@ void Grid::render(GLuint shader,
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glDepthMask(GL_FALSE);
+    glDepthMask(GL_TRUE);
 
     glBindVertexArray(m_vao);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindVertexArray(0);
 
-    glDepthMask(GL_TRUE); // Riabilita scrittura su depth buffer
     glDisable(GL_BLEND);
 }
 

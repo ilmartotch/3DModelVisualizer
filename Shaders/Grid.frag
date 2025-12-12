@@ -1,4 +1,6 @@
-#version 330 core
+#version 450 core
+
+layout(depth_less) out float gl_FragDepth;
 out vec4 FragColor;
 
 in vec3 worldPos_var;
@@ -12,6 +14,7 @@ uniform float uHalfSize;  // half-size (5 => 10x10)
 uniform vec3 uGridColor;  // linee griglia
 uniform vec3 uXAxisColor; // asse X (linea su Z=0)
 uniform vec3 uZAxisColor; // asse Z (linea su X=0)
+uniform mat4 viewProjectionMatrix;
 
 // Parametri
 const float fadeStart = 50.0;
@@ -35,6 +38,8 @@ void main() {
 
     float t = -cameraPos.y / rayDir.y;
     vec3 worldPos = cameraPos + rayDir * t;
+
+    vec4 clipPos = viewProjectionMatrix * vec4(worldPos, 1.0);
 
     // Clamp per modalità FINITA
     if (uInfinite == 0) {
@@ -65,4 +70,6 @@ void main() {
     }
 
     FragColor = vec4(finalColor, alpha);
+    
+    gl_FragDepth = clipPos.z / clipPos.w * 0.5 + 0.5;
 }

@@ -15,6 +15,7 @@
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
+#include <cassert>
 
 // Manager per picking
 #include "Include/PickingBuffer.h"
@@ -68,6 +69,7 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos);
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void initializePickingSystem();
 void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection);
+void renderShadowFloor(const glm::mat4& view, const glm::mat4& projection);
 void renderSceneControlPanel();
 void processMousePicking(int x, int y);
 void handlePickingResult(const glm::vec3& idColor);
@@ -159,8 +161,9 @@ static char lightNameBuffer[128] = "Directional Light";
 // Shadow mapping
 static ShadowSystem gShadows;
 static const int DIR_SHADOW_SIZE = 4096;
-static constexpr float gFloorHeight = 0.0f;
+static constexpr float gFloorHeight = - 0.05f;
 static bool gEnableShadowMap = true;
+static constexpr unsigned int gShadowFloorObjectNumericId = 0x00FFFFFC;
 
 // FPS
 float fps = 0.0f;
@@ -343,6 +346,18 @@ ModelManager modelManager;
 
 // SceneManager per la gestione della scena
 SceneManager sceneManager(modelManager);
+
+struct ShadowMapData {
+    static constexpr size_t ShadowMapResolution = 4096;
+
+    GLuint Shader;
+    GLuint Image;
+    GLuint Framebuffer;
+    glm::mat4x4 ViewProjection;
+};
+ShadowMapData gShadowMapData;
+
+GLuint gPlanarFloorShader = 0;
 
 static bool ProjectToScreen(const glm::vec3& p, const glm::mat4& view, const glm::mat4& proj, ImVec2& outScreen) {
     glm::vec4 clip = proj * view * glm::vec4(p, 1.0f);
@@ -573,6 +588,15 @@ void updateCameraPosition() {
     float camZ = radXZ * cosf(glm::radians(mouseControl.orbitalAngleX));
     mouseControl.camPos = mouseControl.cameraTarget + glm::vec3(camX, camY + mouseControl.cameraHeight / 2, camZ);
     if (mouseControl.camPos.y < 0.5f) mouseControl.camPos.y = 0.5f;
+    
+    float extent = (std::max)(20.0f, mouseControl.cameraDistance * 5.0f);
+    sceneManager.updateObjectScale(gShadowFloorObjectNumericId, glm::vec3(extent, 1.0f, extent));
+
+    if (auto floorObj = findObjectById(gShadowFloorObjectNumericId)) {
+        glm::vec3 p = floorObj->getPosition();
+        p.y = gFloorHeight - 0.01f;
+        sceneManager.updateObjectPosition(gShadowFloorObjectNumericId, p);
+    }
 }
 
 void resetCameraView() {
@@ -631,6 +655,7 @@ void processMousePicking(int xWindow, int yWindow) {
     glEnable(GL_DEPTH_TEST);
 
     pickingBuffer.bind();
+    glViewport(0, 0, pickingBuffer.getWidth(), pickingBuffer.getHeight());
     pickingBuffer.clear();
 
     // Usa l'aspect del picking buffer (più robusto durante resize/HiDPI)
@@ -646,6 +671,7 @@ void processMousePicking(int xWindow, int yWindow) {
 
     // Sincronizza la scrittura sul FBO prima della lettura
     glFlush();
+	glFinish();
 
     glm::vec3 idColor = pickingBuffer.readPixel(px, py);
     pickingBuffer.unbind();
@@ -658,14 +684,6 @@ void processMousePicking(int xWindow, int yWindow) {
 
     handlePickingResult(q);
 
-#ifdef DEBUG_PICKING
-    std::cout << "=== PICKING DEBUG ===" << std::endl;
-    std::cout << "Window coords: (" << xWindow << "," << yWindow << ")" << std::endl;
-    std::cout << "FB coords: (" << px << "," << py << ")" << std::endl;
-    std::cout << "Raw ID Color: " << idColor.r << "," << idColor.g << "," << idColor.b << std::endl;
-    std::cout << "Quantized:     " << q.r << "," << q.g << "," << q.b << std::endl;
-    std::cout << "Decoded ID:    " << sceneManager.colorToId(q) << std::endl;
-#endif
 }
 
 float lastClickTime = 0.0f;
@@ -681,6 +699,14 @@ void handlePickingResult(const glm::vec3& idColor) {
 
     // Click nel vuoto → deseleziona sempre
     if (pickedId == 0) {
+        sceneManager.deselectAll();
+        objectSelected = false;
+        if (!pinSelectedModelPanel) showSelectedModelPanel = false;
+        ImGuizmo::Enable(false);
+        return;
+    }
+
+    if (pickedId == gShadowFloorObjectNumericId) {
         sceneManager.deselectAll();
         objectSelected = false;
         if (!pinSelectedModelPanel) showSelectedModelPanel = false;
@@ -879,7 +905,14 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     SetUniformVec3(shader, "uDirLight.direction", lightDir);
     SetUniformVec3(shader, "uDirLight.color", gDirLight.color);
 
-    gShadows.bindForShading(shader, 1, (gEnableShadowMap && gDirLight.enabled));
+    SetUniformInt(shader, "uUseShadowMap", (gEnableShadowMap && gDirLight.enabled) ? 1 : 0);
+    SetUniformInt(shader, "uShadowMapSize", gShadowMapData.ShadowMapResolution);
+    SetUniformMat4(shader, "lightSpaceMatrix", gShadowMapData.ViewProjection);
+
+    static constexpr uint32_t shadowMapUnit = 1;
+    glActiveTexture(GL_TEXTURE0 + shadowMapUnit);
+    glBindTexture(GL_TEXTURE_2D, gShadowMapData.Image);
+    glUniform1i(glGetUniformLocation(shader, "uShadowMap"), shadowMapUnit);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -893,16 +926,23 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     });
 
     for (const auto& obj : list) {
+
+        if (obj->getId() == gShadowFloorObjectNumericId) {
+            continue;
+        }
+
         glm::mat4 modelMatrix = obj->getModelMatrix();
         SetUniformMat4(shader, "model", modelMatrix);
 
         bool isLightIcon = (obj->getId() == gDirLightObjectNumericId);
+		bool isLightTarget = (obj->getId() == gDirLightTargetObjectNumericId);
+		bool isShadowFloor = (obj->getId() == gShadowFloorObjectNumericId);
+
         SetUniformInt(shader, "uLightIcon", isLightIcon ? 1 : 0);
         SetUniformInt(shader, "uLightGradientEnabled", (isLightIcon && gDirLight.useGradient) ? 1 : 0);
         SetUniformVec3(shader, "uLightGradientStart", gDirLight.gradientStart);
         SetUniformVec3(shader, "uLightGradientEnd", gDirLight.gradientEnd);
         SetUniformVec3(shader, "uLightEmitColor", gDirLight.color);
-        SetUniformInt(shader, "uUnlit", 0);
 
         if (isLightIcon) {
             SetUniformInt(shader, "useOverrideColor", 0);
@@ -919,7 +959,8 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
             glBindTexture(GL_TEXTURE_2D, obj->getOverrideTextureID());
             SetUniformInt(shader, "useOverrideColor", 0);
             SetUniformInt(shader, "useTexture", 1);
-        } else if (obj->hasOverrideColor()) {
+        }
+        else if (obj->hasOverrideColor()) {
             glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
             SetUniformInt(shader, "useOverrideColor", 1);
             SetUniformVec4(shader, "overrideColor", obj->getOverrideColor());
@@ -935,9 +976,76 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
             SetUniformInt(shader, "useOverrideColor", 0);
             SetUniformInt(shader, "useTexture", 0);
         }
+
         model->render();
         glBindTexture(GL_TEXTURE_2D, 0);
     }
+}
+
+static void renderShadowFloor(const glm::mat4& view, const glm::mat4& projection) {
+    auto floorObj = findObjectById(gShadowFloorObjectNumericId);
+    if (!floorObj) {
+        return;
+    }
+
+    if (!gEnableShadowMap || !gDirLight.enabled || !gDirLight.enablePlanarShadows) {
+        return;
+    }
+
+    glUseProgram(gPlanarFloorShader);
+
+    glm::mat4 model = floorObj->getModelMatrix();
+
+    // Uniform base (matrici)
+    SetUniformMat4(gPlanarFloorShader, "model", model);
+    SetUniformMat4(gPlanarFloorShader, "view", view);
+    SetUniformMat4(gPlanarFloorShader, "projection", projection);
+    SetUniformMat4(gPlanarFloorShader, "lightSpaceMatrix", gShadowMapData.ViewProjection);
+
+    // Parametri floor
+    SetUniformFloat(gPlanarFloorShader, "uFloorHeight", gFloorHeight);
+    SetUniformInt(gPlanarFloorShader, "uUseShadowMap", 1);
+    SetUniformInt(gPlanarFloorShader, "uShadowMapSize", (int)ShadowMapData::ShadowMapResolution);
+    SetUniformVec3(gPlanarFloorShader, "uBackgroundColor", glm::vec3(0.7f, 0.7f, 0.7f));
+
+    // Direzione luce
+    glm::vec3 lightDir;
+    if (gDirLight.useTarget) {
+        lightDir = glm::normalize(gDirLight.target - gDirLight.position);
+    }
+    else {
+        glm::vec3 e = glm::radians(gDirLight.orientationEuler);
+        glm::mat4 rotY = glm::rotate(glm::mat4(1.0f), e.y, glm::vec3(0, 1, 0));
+        glm::mat4 rotX = glm::rotate(glm::mat4(1.0f), e.x, glm::vec3(1, 0, 0));
+        glm::vec3 forward = glm::vec3(rotY * rotX * glm::vec4(0, 0, -1, 0));
+        lightDir = glm::normalize(forward);
+    }
+    SetUniformVec3(gPlanarFloorShader, "uLightDir", lightDir);
+
+    SetUniformFloat(gPlanarFloorShader, "uShadowStrength", 1.0f);
+
+    // Bind shadow map come sampler2DShadow
+    static constexpr GLuint shadowMapUnit = 3;
+    glActiveTexture(GL_TEXTURE0 + shadowMapUnit);
+    glBindTexture(GL_TEXTURE_2D, gShadowMapData.Image);
+
+    // Imposta compare mode per questo pass (necessario per sampler2DShadow)
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+
+    GLint loc = glGetUniformLocation(gPlanarFloorShader, "uShadowMap");
+    glUniform1i(loc, shadowMapUnit);
+
+    // Disabilita blending per il floor (il floor di per sé produce colore pieno)
+    glDisable(GL_BLEND);
+
+    // Render floor mesh
+    if (auto modelPtr = floorObj->getModel()) {
+        modelPtr->render();
+    }
+
+    // Ripristina stato minimo (compare mode lo lasciamo, non influisce sul sampler2D degli altri shader)
+    glUseProgram(0);
 }
 
 #ifdef _WIN32
@@ -2192,7 +2300,7 @@ int main() {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     ImGui::StyleColorsDark();
     ImGui_ImplGlfw_InitForOpenGL(win.getGLFWwindow(), true);
-    ImGui_ImplOpenGL3_Init("#version 330");
+    ImGui_ImplOpenGL3_Init("#version 450");
 
     ApplayModernRoundedStyle();
 
@@ -2243,11 +2351,21 @@ int main() {
         logger.LogShaderLoaded("DirShadowDepth");
     }
 
+    gPlanarFloorShader = LoadShader("Shaders/PlanarShadowFloor.vert", "Shaders/PlanarShadowFloor.frag");
+    if (gPlanarFloorShader == 0) {
+        logger.LogShaderError("PlanarShadowFloor", "Errore nel caricamento degli shader del floor.");
+        return -1;
+    }
+    else {
+        logger.LogShaderLoaded("PlanarShadowFloor");
+    }
+
     // Registra i modelli base
     modelManager.registerModel(std::make_shared<CubeModel>());
     modelManager.registerModel(std::make_shared<SphereModel>());
     modelManager.registerModel(std::make_shared<PyramidModel>());
     modelManager.registerModel(std::make_shared<ImagePlaneModel>());
+    modelManager.registerModel(std::make_shared<ShadowFloor>());
 
     // Inizializza i modelli registrati
     modelManager.initializeModels();
@@ -2284,6 +2402,16 @@ int main() {
         }
     }
 
+    {
+        glm::vec3 floorPos(0.0f, gFloorHeight, 0.0f);
+        auto floorObj = sceneManager.addSystemObject("ShadowFloor", floorPos, gShadowFloorObjectNumericId, "Shadow Floor");
+        if (floorObj) {
+            float extent = 50.0f;
+            sceneManager.updateObjectScale(gShadowFloorObjectNumericId, glm::vec3(extent, 1.0f, extent));
+            logger.Log(Logger::Level::Info, Logger::Category::Grid, "Shadow floor aggiunto.");
+        }
+    }
+
     // Render loop
     while (!win.shouldClose()) {
         // Timer
@@ -2299,10 +2427,82 @@ int main() {
             frameCount = 0;
         }
 
+        glm::mat4x4 lightView = glm::lookAt(gDirLight.position, gDirLight.target, glm::vec3(0.0, 1.0, 0.0));
+        constexpr float orthoSize = 15.0f;
+        glm::mat4x4 lightProjection = glm::orthoRH_ZO(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.01f, 100.0f);
+        gShadowMapData.ViewProjection = lightProjection * lightView;
+
+        // Render shadow map
+        {
+            static bool isFirstFrame{ true };
+
+            if (isFirstFrame) {
+                gShadowMapData.Shader = LoadShader("Shaders/DirShadowDepth.vert", "Shaders/DirShadowDepth.frag");
+
+                glGenTextures(1, &gShadowMapData.Image);
+                glBindTexture(GL_TEXTURE_2D, gShadowMapData.Image);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32,
+                    ShadowMapData::ShadowMapResolution, ShadowMapData::ShadowMapResolution, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+                glGenFramebuffers(1, &gShadowMapData.Framebuffer);
+                glBindFramebuffer(GL_FRAMEBUFFER, gShadowMapData.Framebuffer);
+
+                glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, gShadowMapData.Image, 0);
+
+                assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
+
+                isFirstFrame = false;
+            }
+
+            glUseProgram(gShadowMapData.Shader);
+            glBindFramebuffer(GL_FRAMEBUFFER, gShadowMapData.Framebuffer);
+
+            glViewport(0, 0, gShadowMapData.ShadowMapResolution, gShadowMapData.ShadowMapResolution);
+            glScissor(0, 0, gShadowMapData.ShadowMapResolution, gShadowMapData.ShadowMapResolution);
+            glEnable(GL_DEPTH_TEST);
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            for (auto& object : sceneManager.getObjects()) {
+                unsigned int id = object->getId();
+
+                if (id == gDirLightObjectNumericId ||
+                    id == gDirLightTargetObjectNumericId ||
+                    id == gShadowFloorObjectNumericId) {
+                    continue;
+                }
+
+                const auto& model = object->getModel();
+                const glm::mat4x4& transform = object->getModelMatrix();
+                glBindVertexArray(model->getVAO());
+
+                SetUniformMat4(gShadowMapData.Shader, "model", transform);
+                SetUniformMat4(gShadowMapData.Shader, "lightSpaceMatrix", gShadowMapData.ViewProjection);
+
+                size_t indexCount = model->getIndices().size();
+                if (indexCount > 0) {
+                    glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
+                }
+                else if (!model->getVertices().empty()) {
+                    GLsizei m_vertexCount = static_cast<GLsizei>(model->getVertices().size() / 6);
+                    glDrawArrays(GL_TRIANGLES, 0, m_vertexCount);
+                }
+
+                glBindVertexArray(0);
+            }
+
+            glUseProgram(0);
+        }
+
         // Abilita il test di profondità
         glEnable(GL_DEPTH_TEST);
 
         // Clear the screen
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glClearColor(0.7f, 0.7f, 0.7f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -3178,14 +3378,17 @@ int main() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, fbw, fbh);
         glEnable(GL_DEPTH_TEST);
+        
+        // Scene
+        renderScene(shader, view, projection);
 
+        // Floor
+        renderShadowFloor(view, projection);
+        
         // Griglia
         grid.render(gridShader, projection, view, mouseControl.camPos,
             gInfiniteGrid, gGridHalfSize,
             GRID_COLOR, GRID_X_AXIS_COLOR, GRID_Z_AXIS_COLOR);
-
-        // Scene
-        renderScene(shader, view, projection);
 
         drawLightDirectionOverlay(view, projection);
         if (objectSelected) {
@@ -3217,6 +3420,7 @@ int main() {
     glDeleteProgram(gridShader);
     glDeleteProgram(pickingShader);
     glDeleteProgram(dirShadowDepthShader);
+	glDeleteProgram(gPlanarFloorShader);
 
     glfwTerminate();
     return 0;
@@ -3226,6 +3430,10 @@ int main() {
 void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
     auto selectedObj = sceneManager.getSelectedObject();
     if (!selectedObj || !objectSelected) return;
+
+    if (selectedObj->getId() == gShadowFloorObjectNumericId) {
+        return;
+    }
 
     ImGuizmo::BeginFrame();
     ImGuizmo::SetOrthographic(false);

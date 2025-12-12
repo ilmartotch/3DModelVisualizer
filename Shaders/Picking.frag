@@ -1,4 +1,4 @@
-#version 330 core
+#version 450 core
 
 // Output per il buffer di picking
 layout(location = 0) out vec4 outColor;   // Regular color (per debug/visualizzazione)

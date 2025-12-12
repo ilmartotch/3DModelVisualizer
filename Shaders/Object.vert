@@ -1,4 +1,4 @@
-#version 330 core
+#version 450 core
 
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
@@ -16,7 +16,7 @@ out VS_OUT {
 
 void main() {
     vec4 wp = model * vec4(aPos, 1.0);
-    vs_out.worldPos = wp.xyz;
+    vs_out.worldPos = wp.xyz / wp.w;
     vs_out.normal = mat3(transpose(inverse(model))) * aNormal;
     vs_out.uv = aTex;
     gl_Position = projection * view * wp;

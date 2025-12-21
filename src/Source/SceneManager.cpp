@@ -248,18 +248,21 @@ glm::vec3 SceneManager::findValidSpawnPosition(const glm::vec3& cameraPos, const
     // Calcola la direzione di vista
     glm::vec3 viewDir = glm::normalize(cameraTarget - cameraPos);
 
+    constexpr float kSpawnLift = 0.5f;
+
     // Punto di intersezione con il piano y=0
     glm::vec3 desiredPos;
 
-    if (viewDir.y < -0.01f) { // Assicurati che la camera stia guardando verso il basso
+    if (viewDir.y < -0.01f) { 
+        // Assicurati che la camera stia guardando verso il basso
         // Calcola l'intersezione con il piano y=0
         float t = -cameraPos.y / viewDir.y;
         desiredPos = cameraPos + t * viewDir;
-        desiredPos.y = yOffset; // Imposta l'altezza desiderata
+        desiredPos.y = yOffset + kSpawnLift;
     }
     else {
         // Fallback se la telecamera è parallela o guarda verso l'alto
-        desiredPos = glm::vec3(cameraTarget.x, yOffset, cameraTarget.z);
+        desiredPos = glm::vec3(cameraTarget.x, yOffset + kSpawnLift, cameraTarget.z);
     }
 
     // Se la posizione desiderata è libera, usala direttamente
@@ -280,7 +283,7 @@ glm::vec3 SceneManager::findValidSpawnPosition(const glm::vec3& cameraPos, const
         // Calcola posizione sulla spirale
         float x = desiredPos.x + radius * cosf(angle);
         float z = desiredPos.z + radius * sinf(angle);
-        glm::vec3 testPos(x, yOffset, z);
+        glm::vec3 testPos(x, yOffset + kSpawnLift, z);
 
         if (hasFiniteSpace() && !isWithinBounds(testPos)) {
             // Salta posizioni fuori dai limiti

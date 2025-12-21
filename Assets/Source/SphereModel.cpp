@@ -24,32 +24,33 @@ void SphereModel::initialize() {
 
     // Generazione vertici
     for (int i = 0; i <= m_stacks; ++i) {
-        float stackAngle = std::numbers::pi / 2.0f - i * stackStep;  // da pi/2 a -pi/2
-        float xy = radius * cosf(stackAngle);           // r * cos(u)
-        float z = radius * sinf(stackAngle);            // r * sin(u)
+        float stackAngle = std::numbers::pi_v<float> / 2.0f - i * stackStep;
+        float xy = radius * std::cos(stackAngle);
+        float z = radius * std::sin(stackAngle);
 
-        // Aggiungere vertici di ogni stack
         for (int j = 0; j <= m_sectors; ++j) {
-            float sectorAngle = j * sectorStep;  // da 0 a 2pi
+            float sectorAngle = j * sectorStep;
 
-            // Coordinate dei vertici
-            float x = xy * cosf(sectorAngle);    // r * cos(u) * cos(v)
-            float y = xy * sinf(sectorAngle);    // r * cos(u) * sin(v)
+            float x = xy * std::cos(sectorAngle);
+            float y = xy * std::sin(sectorAngle);
 
-            // Normalizzare il vettore per ottenere colori basati sulla direzione
-            float nx = x / radius;
-            float ny = y / radius;
-            float nz = z / radius;
+            float px = x;
+            float py = z;
+            float pz = y;
 
-            // Coordinate dei vertici
-            m_vertices.push_back(x);
-            m_vertices.push_back(z); // Invertiamo y e z per orientare meglio la sfera
-            m_vertices.push_back(y);
+            float length = std::sqrt(px * px + py * py + pz * pz);
+            float invLen = length > 0.0f ? 1.0f / length : 0.0f;
+            float nx = px * invLen;
+            float ny = py * invLen;
+            float nz = pz * invLen;
 
-            // Colori (basati sulla normale normalizzata)
-            m_vertices.push_back(0.5f + 0.5f * nx);
-            m_vertices.push_back(0.5f + 0.5f * ny);
-            m_vertices.push_back(0.5f + 0.5f * nz);
+            m_vertices.push_back(px);
+            m_vertices.push_back(py);
+            m_vertices.push_back(pz);
+
+            m_vertices.push_back(nx);
+            m_vertices.push_back(ny);
+            m_vertices.push_back(nz);
         }
     }
 

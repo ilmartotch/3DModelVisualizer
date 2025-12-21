@@ -214,7 +214,11 @@ void ImportedModel::initialize() {
         std::cerr << "ERROR: No mesh data for model: " << getName() << std::endl;
         return;
     }
-    
+
+    if (m_vertices.empty()) {
+        rebuildBaseGeometryData();
+    }
+
     meshRenderData.clear();
     meshRenderData.reserve(meshes.size());
     
@@ -313,12 +317,15 @@ void ImportedModel::initialize() {
     }
     
     glBindVertexArray(0);
-    
+
+    cleanupBuffers();
+    setupBuffers();
+
     if (!textures.empty() && textures[0].id != 0) {
         setTexture(textures[0].id);
         std::cout << "  Texture principale modello impostata: " << textures[0].id << std::endl;
     }
-    
+
     m_initialized = true;
     std::cout << "=== Fine inizializzazione " << getName() << " ===" << std::endl;
 }
@@ -352,10 +359,10 @@ void ImportedModel::render() {
         
         glBindVertexArray(renderData.VAO);
         
-        if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
+        /*if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, renderData.textureID);
-        }
+        }*/
         
         if (renderData.indexCount > 0) {
             glDrawElements(GL_TRIANGLES, renderData.indexCount, GL_UNSIGNED_INT, 0);
@@ -377,6 +384,10 @@ std::string ImportedModel::getMeshName(size_t index) const {
 }
 
 void ImportedModel::cleanup() {
+    cleanupBuffers();
+    m_vertices.clear();
+    m_indices.clear();
+
     for (auto& renderData : meshRenderData) {
         if (renderData.VAO != 0) glDeleteVertexArrays(1, &renderData.VAO);
         if (renderData.VBO_vertices != 0) glDeleteBuffers(1, &renderData.VBO_vertices);
@@ -389,6 +400,77 @@ void ImportedModel::cleanup() {
         glDeleteTextures(1, &texture.id);
     }
     m_initialized = false;
+}
+
+void ImportedModel::rebuildBaseGeometryData() {
+    cleanupBuffers();
+    m_vertices.clear();
+    m_indices.clear();
+
+    if (meshes.empty()) {
+        hasUVs = false;
+        return;
+    }
+
+    bool globalHasUVs = std::any_of(meshes.begin(), meshes.end(),
+        [](const MeshData& mesh) { return !mesh.texCoords.empty(); });
+    hasUVs = globalHasUVs;
+
+    size_t totalVertexCount = 0;
+    size_t totalIndexCount = 0;
+    for (const auto& mesh : meshes) {
+        totalVertexCount += mesh.vertices.size() / 3;
+        totalIndexCount += mesh.indices.size();
+    }
+
+    const size_t floatsPerVertex = hasUVs ? 8u : 6u;
+    m_vertices.reserve(totalVertexCount * floatsPerVertex);
+    m_indices.reserve(totalIndexCount);
+
+    size_t vertexOffset = 0;
+    for (const auto& mesh : meshes) {
+        const size_t vertexCount = mesh.vertices.size() / 3;
+        const bool meshHasNormals = mesh.normals.size() >= vertexCount * 3;
+        const bool meshHasUVs = mesh.texCoords.size() >= vertexCount * 2;
+
+        for (size_t v = 0; v < vertexCount; ++v) {
+            m_vertices.push_back(mesh.vertices[v * 3 + 0]);
+            m_vertices.push_back(mesh.vertices[v * 3 + 1]);
+            m_vertices.push_back(mesh.vertices[v * 3 + 2]);
+
+            if (meshHasNormals) {
+                m_vertices.push_back(mesh.normals[v * 3 + 0]);
+                m_vertices.push_back(mesh.normals[v * 3 + 1]);
+                m_vertices.push_back(mesh.normals[v * 3 + 2]);
+            }
+            else {
+                m_vertices.insert(m_vertices.end(), { 0.0f, 0.0f, 0.0f });
+            }
+
+            if (hasUVs) {
+                if (meshHasUVs) {
+                    m_vertices.push_back(mesh.texCoords[v * 2 + 0]);
+                    m_vertices.push_back(mesh.texCoords[v * 2 + 1]);
+                }
+                else {
+                    m_vertices.insert(m_vertices.end(), { 0.0f, 0.0f });
+                }
+            }
+        }
+
+        if (!mesh.indices.empty()) {
+            for (auto idx : mesh.indices) {
+                m_indices.push_back(static_cast<unsigned int>(vertexOffset + idx));
+            }
+        }
+        else {
+            for (size_t idx = 0; idx < vertexCount; ++idx) {
+                m_indices.push_back(static_cast<unsigned int>(vertexOffset + idx));
+            }
+        }
+
+        vertexOffset += vertexCount;
+    }
 }
 
 void ImportedModel::addMesh(const MeshData& mesh) {
@@ -560,7 +642,8 @@ std::shared_ptr<ImportedModel> ModelLoader::loadModel(const std::string& path) {
     
     processNode(scene->mRootNode, scene, model, directory, aiMatrix4x4());
     normalizeModel(model);
-    
+    model->rebuildBaseGeometryData();
+
     bool hasValidUVs = false;
     for (const auto& mesh : model->getMeshes()) {
         if (!mesh.texCoords.empty()) { hasValidUVs = true; break; }
@@ -1030,7 +1113,21 @@ void ModelLoader::normalizeModel(std::shared_ptr<ImportedModel> model) {
 }
 
 void ImportedModel::setupVertexAttributes() {
-    // ImportedModel usa VBO separati impostati in initialize(). Nessuna azione necessaria qui.
+    const GLsizei stride = static_cast<GLsizei>(getVertexStrideFloats() * sizeof(float));
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(0));
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(sizeof(float) * 3));
+    glEnableVertexAttribArray(1);
+
+    if (hasUVs) {
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(sizeof(float) * 6));
+        glEnableVertexAttribArray(2);
+    }
+    else {
+        glDisableVertexAttribArray(2);
+    }
 }
 
 // Caricamento immagine come plane (usato da openImageFile)

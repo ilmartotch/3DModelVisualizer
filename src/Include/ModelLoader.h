@@ -44,6 +44,9 @@ struct TextureData {
 
 class ImportedModel : public Model {
 private:
+
+	friend class ModelLoader;
+
     // vettore mesh
     std::vector<MeshData> meshes;
     std::vector<TextureData> textures;
@@ -67,6 +70,8 @@ private:
     // Dati di normalizzazione per mantenere proporzioni
     glm::vec3 normalizationCenter = glm::vec3(0.0f);
     float normalizationScale = 1.0f;
+
+	void rebuildBaseGeometryData(); // Ricostruisce i VBO/VAO dopo modifiche
     
 public:
     ImportedModel(const std::string& name = "ImportedModel");
@@ -108,6 +113,16 @@ public:
     void setNormalizationScale(float scale) { normalizationScale = scale; }
     glm::vec3 getNormalizationCenter() const { return normalizationCenter; }
     float getNormalizationScale() const { return normalizationScale; }
+
+    GLuint getPrimaryTextureID() const {
+        for (const auto& renderData : meshRenderData) {
+            if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
+                return renderData.textureID;
+            }
+        }
+        // Fallback alla texture del modello base
+        return getTextureID();
+    }
 };
 
 class ModelLoader {

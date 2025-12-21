@@ -13,49 +13,46 @@
 
 std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupportedFormats() {
     return {
-        // Wavefront OBJ - universale
+
         {
             "obj",
             "Wavefront OBJ",
             ".obj",
             "Formato universale, supportato ovunque. Leggero e leggibile.",
             "Uso generale, web, visualizzatori 3D, editing",
-            true,   // Materials (.mtl)
-            true,   // Textures
-            false,  // No animations
-            false,  // Testo
-            false   // Embedded textures NON supportate
+            true,
+            true,
+            false,
+            false,
+            false
         },
         
-        // glTF 2.0 - Standard moderno
         {
             "gltf2",
             "glTF 2.0",
             ".gltf",
             "Standard moderno per il web. Ottimo per WebGL e Three.js.",
             "Web 3D, AR/VR, pipeline moderne",
-            true,   // Materials (PBR)
-            true,   // Textures
-            true,   // Animations
-            false,  // JSON + bin
-            true    // Embedded supportato (data URI/BUFFERS)
+            true,
+            true,
+            true,
+            false,
+            true
         },
         
-        // glTF Binary
         {
             "glb2",
             "glTF 2.0 Binary",
             ".glb",
-            "Come glTF ma in un unico file binario. Più compatto.",
+            "Come glTF ma in un unico file binario compatto",
             "Distribuzione, app mobile, AR/VR",
             true,
             true,
             true,
-            true,   // Binario
-            true    // Embedded supportato (file unico)
+            true,
+            true
         },
         
-        // Autodesk FBX
         {
             "fbx",
             "Autodesk FBX",
@@ -65,11 +62,10 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             true,
             true,
             true,
-            true,   // Binario
-            true    // Embedded generalmente supportato
+            true,
+            true
         },
         
-        // COLLADA
         {
             "collada",
             "COLLADA",
@@ -79,25 +75,23 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             true,
             true,
             true,
-            false,  // XML
-            true    // Embedded possibile (data URI/base64)
+            false,
+            true
         },
-        
-        // STL - Stampa 3D
+
         {
             "stl",
             "STereoLithography",
             ".stl",
             "Solo geometria. Usato per stampa 3D e CAD.",
             "Stampa 3D, prototipazione, CAD",
-            false,  // No materials
-            false,  // No textures
             false,
-            true,   // Binario
-            false   // No embedded
+            false,
+            false,
+            true,
+            false
         },
-        
-        // PLY - Stanford
+
         {
             "ply",
             "Stanford PLY",
@@ -107,8 +101,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             false,
             false,
             false,
-            true,   // Binario possibile
-            false   // No embedded textures
+            true,
+            false
         }
     };
 }
@@ -118,7 +112,7 @@ AssimpSceneExporter::ExportPreview AssimpSceneExporter::generateExportPreview(
     const ModelManager& modelManager,
     bool copyTextures)
 {
-    (void)modelManager; // non necessario per il preview
+    (void)modelManager;
 
     ExportPreview preview;
 
@@ -270,9 +264,9 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
     
     // Post-processing flags
     unsigned int exportFlags = 
-        aiProcess_Triangulate |           // Assicura triangoli
-        aiProcess_JoinIdenticalVertices | // Ottimizza
-        aiProcess_SortByPType;            // Ordina per tipo primitiva
+        aiProcess_Triangulate |
+        aiProcess_JoinIdenticalVertices |
+        aiProcess_SortByPType;
     
     aiReturn exportResult = exporter.Export(
         scene,
@@ -289,7 +283,6 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
         return result;
     }
     
-    // Calcola statistiche
     calculateSceneStats(scene, result);
     
     // Dimensione file
@@ -368,14 +361,12 @@ aiScene* AssimpSceneExporter::buildAssimpScene(
         return scene;
     }
     
-    // Alloca array
     scene->mNumMeshes = static_cast<unsigned int>(numObjects);
     scene->mMeshes = new aiMesh*[numObjects];
     
     scene->mNumMaterials = static_cast<unsigned int>(numObjects);
     scene->mMaterials = new aiMaterial*[numObjects];
     
-    // Alloca children del root node
     scene->mRootNode->mNumChildren = static_cast<unsigned int>(numObjects);
     scene->mRootNode->mChildren = new aiNode*[numObjects];
     

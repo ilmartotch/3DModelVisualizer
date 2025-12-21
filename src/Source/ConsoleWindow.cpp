@@ -14,11 +14,14 @@ void ConsoleWindow::Draw(bool* pOpen)
 {
     if (pOpen && !*pOpen) return;
 
+	const ImVec2 windowSize(820, 500);
+    ImGui::SetNextWindowSize(windowSize, ImGuiCond_Always);
+	ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoResize;
+
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
 
-    if (!ImGui::Begin(m_title.c_str(), pOpen, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_MenuBar)) {
+    if (!ImGui::Begin(m_title.c_str(), pOpen, flags)) {
         ImGui::End();
-        ImGui::PopStyleVar();
         return;
     }
 
@@ -29,20 +32,6 @@ void ConsoleWindow::Draw(bool* pOpen)
             ImGui::Checkbox("Level", &m_showLevel);
             ImGui::Checkbox("Auto-scroll", &m_autoScroll);
             ImGui::Checkbox("Wrap text", &m_wrapText);
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Actions")) {
-            if (ImGui::MenuItem("Clear Logs")) {
-                Logger::Get().Clear();
-            }
-            if (ImGui::MenuItem("Copy All")) {
-                std::string text = Logger::Get().BuildPlainTextLog(m_showTimestamp, m_showLevel);
-                Logger::Get().CopyToClipboard(text);
-            }
-            if (ImGui::MenuItem("Bug Report")) {
-                m_lastReportSuccess = Logger::Get().ExportAndOpenBugReport();
-                m_lastReportTime = static_cast<float>(glfwGetTime());
-            }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -191,5 +180,4 @@ void ConsoleWindow::DrawStatusBar()
 
     ImGui::TextDisabled("Showing %zu / %zu entries", filtered.size(), total);
     ImGui::SameLine(ImGui::GetWindowWidth() - 120);
-    ImGui::Checkbox("Auto-scroll", &m_autoScroll);
 }

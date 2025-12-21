@@ -70,7 +70,7 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void initializePickingSystem();
 void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection);
 void renderShadowFloor(const glm::mat4& view, const glm::mat4& projection);
-void renderSceneControlPanel();
+void renderSectionSceneObjects();
 void processMousePicking(int x, int y);
 void handlePickingResult(const glm::vec3& idColor);
 void resetCameraView();
@@ -79,7 +79,6 @@ glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& 
 void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection);
 void openModelFile();
 void openImageFile();
-void renderLoadingDialog();
 void ApplayModernRoundedStyle();
 
 // Variabili window
@@ -110,6 +109,7 @@ static const glm::vec3 GRID_COLOR = glm::vec3(0.0f, 0.0f, 0.0f);
 static const glm::vec3 GRID_X_AXIS_COLOR = glm::vec3(1.0f, 0.2f, 0.2f);
 static const glm::vec3 GRID_Z_AXIS_COLOR = glm::vec3(0.2f, 0.2f, 1.0f);
 static constexpr int gFiniteModeMaxObjects = 10;
+static constexpr float minHeight = 0.5f;
 static bool gFiniteLimitReached = false;
 static bool showFiniteLimitDialog = false;
 static bool gLastPlacementClamped = false;
@@ -138,15 +138,15 @@ static LightingSettings gLighting;
 // Directional light
 struct DirectionalLightState {
     glm::vec3 position{ -2.0f, 2.0f, 2.0f };
-    glm::vec3 color{ 1.0f, 0.95f, 0.8f }; // Colore luce emessa
-    glm::vec3 gradientStart{ 1.0f, 0.9f, 0.6f }; // Colore alto icona
-    glm::vec3 gradientEnd{ 1.0f, 0.5f, 0.2f }; // Colore basso icona
+    glm::vec3 color{ 1.0f, 0.95f, 0.8f };
+    glm::vec3 gradientStart{ 1.0f, 0.9f, 0.6f };
+    glm::vec3 gradientEnd{ 1.0f, 0.5f, 0.2f };
     bool useGradient = true;
     bool enabled = true;
     bool enablePlanarShadows = true;
-    glm::vec4 shadowColor{0.0f, 0.0f, 0.0f, 0.35f}; 
+    glm::vec4 shadowColor{ 0.0f, 0.0f, 0.0f, 0.35f };
     bool useTarget = true;
-	glm::vec3 target{ 0.0f, 0.0f, 0.0f };
+    glm::vec3 target{ 0.0f, 0.0f, 0.0f };
     glm::vec3 orientationEuler{ 20.0f, 45.0f, 0.0f };
 };
 
@@ -161,7 +161,7 @@ static char lightNameBuffer[128] = "Directional Light";
 // Shadow mapping
 static ShadowSystem gShadows;
 static const int DIR_SHADOW_SIZE = 4096;
-static constexpr float gFloorHeight = - 0.05f;
+static constexpr float gFloorHeight = -0.075f;
 static bool gEnableShadowMap = true;
 static constexpr unsigned int gShadowFloorObjectNumericId = 0x00FFFFFC;
 
@@ -193,13 +193,13 @@ bool showLoadModelDialog = false;
 bool showLoadTextureDialog = false;
 
 // Gestione errori
-struct ErrorDialog
-{
+struct ErrorDialog {
     bool show = false;
     std::string title = "";
     std::string message = "";
     std::string details = "";
 };
+
 static ErrorDialog errorDialog;
 
 struct SuccessDialog {
@@ -210,71 +210,13 @@ struct SuccessDialog {
 
     void reset() {
         show = false;
-        title = "";
-        message = "";
-        details = "";
+        title.clear();
+        message.clear();
+        details.clear();
     }
 };
 
 static SuccessDialog successDialog;
-
-// Dialog di caricamento
-struct LoadingDialog {
-    bool show = false;
-    std::string fileName = "";
-    float progress = 0.0f;
-    std::string statusMessage = "Loading...";
-    float elapsedTime = 0.0f;
-    float startTime = 0.0f;
-    bool isComplete = false;
-    bool hasError = false;
-    std::string errorMessage = "";
-    
-    // Animazione spinner
-    float spinnerAngle = 0.0f;
-    
-    void reset() {
-        show = false;
-        fileName = "";
-        progress = 0.0f;
-        statusMessage = "Loading...";
-        elapsedTime = 0.0f;
-        startTime = 0.0f;
-        isComplete = false;
-        hasError = false;
-        errorMessage = "";
-        spinnerAngle = 0.0f;
-    }
-    
-    void start(const std::string& file) {
-        reset();
-        show = true;
-        fileName = file;
-        startTime = static_cast<float>(glfwGetTime());
-    }
-    
-    void updateProgress(float prog, const std::string& message = "") {
-        progress = std::clamp(prog, 0.0f, 1.0f);
-        if (!message.empty()) {
-            statusMessage = message;
-        }
-        elapsedTime = static_cast<float>(glfwGetTime()) - startTime;
-    }
-    
-    void complete() {
-        progress = 1.0f;
-        statusMessage = "Complete!";
-        isComplete = true;
-    }
-    
-    void error(const std::string& msg) {
-        hasError = true;
-        errorMessage = msg;
-        statusMessage = "Error!";
-    }
-};
-
-static LoadingDialog loadingDialog;
 
 struct ExportFormatDialog {
     bool show = false;
@@ -296,7 +238,7 @@ struct ExportFormatDialog {
     void reset() {
         show = false;
         selectedFormatIndex = 0;
-        exportFolder = "";
+        exportFolder.clear();
         copyTextures = true;
         embedTextures = true;
     }
@@ -312,7 +254,7 @@ PickingBuffer pickingBuffer;
 GLuint pickingShader = 0;
 bool pickingEnabled = true;
 
- // Tracciamento RenderMode
+// Tracciamento RenderMode
 int currentRenderMode = static_cast<int>(Model::RenderMode::SOLID);
 
 // Input comandi
@@ -359,15 +301,49 @@ ShadowMapData gShadowMapData;
 
 GLuint gPlanarFloorShader = 0;
 
+struct UiWindowConfig {
+    const char* id;
+    ImVec2      defaultPos;
+    ImVec2      defaultSize;
+    bool        center;
+    bool        movable;
+    bool        useAlways;
+    ImGuiWindowFlags extraFlags;
+};
+
+// Helper centralizzato per configurare finestra UI
+static ImGuiWindowFlags BeginConfiguredWindow(const UiWindowConfig& cfg) {
+    ImGuiCond cond = cfg.useAlways ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+
+    if (cfg.center) {
+        ImVec2 vpCenter = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(vpCenter, cond, ImVec2(0.5f, 0.5f));
+    }
+    else if (cfg.defaultPos.x > 0.0f || cfg.defaultPos.y > 0.0f) {
+        ImGui::SetNextWindowPos(cfg.defaultPos, cond);
+    }
+
+    if (cfg.defaultSize.x > 0.0f && cfg.defaultSize.y > 0.0f) {
+        ImGui::SetNextWindowSize(cfg.defaultSize, cond);
+    }
+
+    ImGuiWindowFlags flags = cfg.extraFlags;
+    if (!cfg.movable) {
+        flags |= ImGuiWindowFlags_NoMove;
+    }
+
+    return flags;
+}
+
 static bool ProjectToScreen(const glm::vec3& p, const glm::mat4& view, const glm::mat4& proj, ImVec2& outScreen) {
     glm::vec4 clip = proj * view * glm::vec4(p, 1.0f);
     if (clip.w <= 0.0f) return false;
-    glm::vec3 ndc = glm::vec3(clip) / clip.w; // [-1,1]
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
     if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < -1.0f || ndc.z > 1.0f) {
         return false;
     }
-    float x = (ndc.x * 0.5f + 0.5f) * (float)gFramebufferWidth;
-    float y = ((-ndc.y) * 0.5f + 0.5f) * (float)gFramebufferHeight; // inverti Y
+    float x = (ndc.x * 0.5f + 0.5f) * static_cast<float>(gFramebufferWidth);
+    float y = ((-ndc.y) * 0.5f + 0.5f) * static_cast<float>(gFramebufferHeight);
     outScreen = ImVec2(x, y);
     return true;
 }
@@ -375,7 +351,6 @@ static bool ProjectToScreen(const glm::vec3& p, const glm::mat4& view, const glm
 static void drawLightDirectionOverlay(const glm::mat4& view, const glm::mat4& projection) {
     if (!gDirLight.enabled) return;
 
-    // Direzione luce (target o Euler)
     glm::vec3 dir = gDirLight.useTarget
         ? glm::normalize(gDirLight.target - gDirLight.position)
         : [&] {
@@ -390,11 +365,10 @@ static void drawLightDirectionOverlay(const glm::mat4& view, const glm::mat4& pr
     ImVec2 p0, p1;
     bool ok0 = ProjectToScreen(gDirLight.position, view, projection, p0);
 
-    // Calcola il punto di intersezione con il piano y = gFloorHeight
     glm::vec3 end;
     bool hasIntersection = false;
     {
-        float denom = dir.y; // componente Y della direzione
+        float denom = dir.y;
         if (std::abs(denom) > 1e-6f) {
             float tHit = (gFloorHeight - gDirLight.position.y) / denom;
             if (tHit >= 0.0f) {
@@ -404,7 +378,6 @@ static void drawLightDirectionOverlay(const glm::mat4& view, const glm::mat4& pr
         }
     }
 
-    // Fallback per stabilire una lunghezza fissa
     if (!hasIntersection) {
         if (gDirLight.useTarget) {
             end = gDirLight.target;
@@ -437,17 +410,21 @@ glm::vec3 clampToFiniteSpace(const glm::vec3& p) {
     );
 }
 
+static inline glm::vec3 ClampRenderablePosition(const glm::vec3& p) {
+    glm::vec3 clamped = clampToFiniteSpace(p);
+    clamped.y = (std::max)(clamped.y, minHeight);
+    return clamped;
+}
+
 static float getObjectEffectiveRadius(const SceneObject& obj) {
-    // Dimensione base (i modelli cube/sphere/pyramid sembrano unit size → lato 1 → raggio 0.5)
     float baseRadius = 0.5f;
     glm::vec3 s = obj.getScale();
-    // Approssimazione: raggio = baseRadius * max(scale.x, scale.z)
     return baseRadius * (std::max)(s.x, s.z);
 }
 
 // Target directional light
 static constexpr unsigned int gDirLightTargetObjectNumericId = 0x00FFFFFD;
-static constexpr float kTargetLift = 0.002f;
+static constexpr float kTargetLift = 0.02f;
 
 static inline glm::vec3 ClampTargetOnFloor(const glm::vec3& p) {
     glm::vec3 c = p;
@@ -458,7 +435,6 @@ static inline glm::vec3 ClampTargetOnFloor(const glm::vec3& p) {
 // Controlla se una posizione è occupata
 bool isPositionOccupied(const glm::vec3& position, float newObjRadius, const SceneManager& manager) {
     for (const auto& obj : manager.getObjects()) {
-        // Ignora oggetti di sistema
         if (manager.isSystemId(obj->getId()) && obj->getId() == gDirLightTargetObjectNumericId) continue;
 
         float r = getObjectEffectiveRadius(*obj);
@@ -474,23 +450,24 @@ bool isPositionOccupied(const glm::vec3& position, float newObjRadius, const Sce
 
 // Calcola la posizione di spawn, gestendo le collisioni
 glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& cameraTarget, const SceneManager& manager) {
-    
-    // Offset verticale per tipo modello
     float yOffset = 0.0f;
     if (modelName == "Cube" || modelName == "Sphere") yOffset = 0.5f;
     else if (modelName == "Pyramid") yOffset = 0.0f;
     else yOffset = 1.0f;
 
-    // Raggio presunto del nuovo oggetto
     float newObjRadius = 0.75f;
 
-    // Modalità infinita: usa già la logica interna del SceneManager
     if (gInfiniteGrid) {
-        return manager.findValidSpawnPosition(mouseControl.camPos, cameraTarget, yOffset, newObjRadius);
+        glm::vec3 pos = manager.findValidSpawnPosition(mouseControl.camPos, cameraTarget, yOffset, newObjRadius);
+        pos.y = (std::max)(pos.y, minHeight);
+        return pos;
     }
 
     float halfExtent = gGridHalfSize;
-    return manager.findValidSpawnPositionFinite( mouseControl.camPos, cameraTarget, yOffset, newObjRadius, halfExtent, gGridBoundaryMargin);
+    glm::vec3 pos = manager.findValidSpawnPositionFinite(
+        mouseControl.camPos, cameraTarget, yOffset, newObjRadius, halfExtent, gGridBoundaryMargin);
+    pos.y = (std::max)(pos.y, minHeight);
+    return pos;
 
     // Base centrale (target proiettato sul piano + offset Y)
     glm::vec3 base = cameraTarget;
@@ -500,7 +477,7 @@ glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& 
     // Se il centro è libero, usa subito
     if (!isPositionOccupied(clampedCenter, newObjRadius, manager)) {
         return clampedCenter;
-    }
+}
 
     // Parametri ricerca
     const int maxRings = 12;
@@ -545,10 +522,8 @@ glm::vec3 calculateSpawnPosition(const std::string& modelName, const glm::vec3& 
         }
     }
 
-    // Se non trovato nulla libera, ritorna il centro clamped della griglia
     return best;
 }
-
 // Helper per recuperare oggetto per ID
 static std::shared_ptr<SceneObject> findObjectById(unsigned int id) {
     for (const auto& o : sceneManager.getObjects()) {
@@ -557,14 +532,12 @@ static std::shared_ptr<SceneObject> findObjectById(unsigned int id) {
     return nullptr;
 }
 
-// Modifica callback framebuffer
+// Callback framebuffer
 void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     if (width > 0 && height > 0) {
-        // Aggiorna dimensioni framebuffer
         gFramebufferWidth = width;
         gFramebufferHeight = height;
 
-        // Aggiorna dimensioni logiche finestra
         int ww, wh;
         glfwGetWindowSize(window, &ww, &wh);
         gWindowWidthLogical = ww;
@@ -580,7 +553,7 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height) {
     }
 }
 
-// Calcolo della nuova posizione della camera
+// Calcolo posizione camera
 void updateCameraPosition() {
     float radXZ = mouseControl.cameraDistance * cosf(glm::radians(mouseControl.orbitalAngleY));
     float camX = radXZ * sinf(glm::radians(mouseControl.orbitalAngleX));
@@ -588,7 +561,7 @@ void updateCameraPosition() {
     float camZ = radXZ * cosf(glm::radians(mouseControl.orbitalAngleX));
     mouseControl.camPos = mouseControl.cameraTarget + glm::vec3(camX, camY + mouseControl.cameraHeight / 2, camZ);
     if (mouseControl.camPos.y < 0.5f) mouseControl.camPos.y = 0.5f;
-    
+
     float extent = (std::max)(20.0f, mouseControl.cameraDistance * 5.0f);
     sceneManager.updateObjectScale(gShadowFloorObjectNumericId, glm::vec3(extent, 1.0f, extent));
 
@@ -607,7 +580,7 @@ void resetCameraView() {
     updateCameraPosition();
 }
 
-// Funzioni helper per il rendering
+// Helper rendering
 void applyRenderMode(Model::RenderMode mode) {
     switch (mode) {
     case Model::RenderMode::WIREFRAME:
@@ -622,34 +595,29 @@ void applyRenderMode(Model::RenderMode mode) {
     }
 }
 
-// Funzione di supporto per convertire coordinate mouse -> framebuffer + inversione Y
-static inline void ConvertCursorToFramebuffer(GLFWwindow* window, double cursorX, double cursorY, int& outX, int& outY) {
+static inline void ConvertCursorToFramebuffer(GLFWwindow* /*window*/, double cursorX, double cursorY, int& outX, int& outY) {
     int ww = gWindowWidthLogical;
     int wh = gWindowHeightLogical;
     int fbw = gFramebufferWidth;
     int fbh = gFramebufferHeight;
 
-    // Scala
-    double scaledX = cursorX * (double)fbw / (double)ww;
-    double scaledY = cursorY * (double)fbh / (double)wh;
+    double scaledX = cursorX * static_cast<double>(fbw) / static_cast<double>(ww);
+    double scaledY = cursorY * static_cast<double>(fbh) / static_cast<double>(wh);
 
-    outX = (int)std::clamp(scaledX, 0.0, (double)fbw - 1.0);
-    outY = (int)std::clamp(scaledY, 0.0, (double)fbh - 1.0);
+    outX = static_cast<int>(std::clamp(scaledX, 0.0, static_cast<double>(fbw - 1)));
+    outY = static_cast<int>(std::clamp(scaledY, 0.0, static_cast<double>(fbh - 1)));
 }
 
-// Aggiorna processMousePicking per usare le dimensioni corrette
+// Picking
 void processMousePicking(int xWindow, int yWindow) {
     if (!pickingEnabled || !pickingBuffer.isInitialized()) return;
 
     int px, py;
-    ConvertCursorToFramebuffer(glfwGetCurrentContext(),
-        (double)xWindow, (double)yWindow, px, py);
+    ConvertCursorToFramebuffer(glfwGetCurrentContext(), static_cast<double>(xWindow), static_cast<double>(yWindow), px, py);
 
-    // Salva viewport corrente
     GLint oldViewport[4];
     glGetIntegerv(GL_VIEWPORT, oldViewport);
 
-    // Stato pulito per pass di picking
     glDisable(GL_BLEND);
     glDisable(GL_FRAMEBUFFER_SRGB);
     glEnable(GL_DEPTH_TEST);
@@ -658,7 +626,6 @@ void processMousePicking(int xWindow, int yWindow) {
     glViewport(0, 0, pickingBuffer.getWidth(), pickingBuffer.getHeight());
     pickingBuffer.clear();
 
-    // Usa l'aspect del picking buffer (più robusto durante resize/HiDPI)
     float aspect = static_cast<float>(pickingBuffer.getWidth()) / static_cast<float>(pickingBuffer.getHeight());
     glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
     glm::mat4 view = glm::lookAt(mouseControl.camPos, mouseControl.cameraTarget, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -669,35 +636,29 @@ void processMousePicking(int xWindow, int yWindow) {
 
     sceneManager.renderForPicking(pickingShader, view, projection);
 
-    // Sincronizza la scrittura sul FBO prima della lettura
     glFlush();
-	glFinish();
+    glFinish();
 
     glm::vec3 idColor = pickingBuffer.readPixel(px, py);
     pickingBuffer.unbind();
 
-    // Ripristina il viewport originale
     glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
 
-    // Quantizza il colore per evitare errori di floating
     glm::vec3 q = QuantizeIdColor(idColor);
-
     handlePickingResult(q);
-
 }
 
 float lastClickTime = 0.0f;
 const float doubleClickTimeThreshold = 0.3f;
 unsigned int lastClickedObjectId = 0;
 
-// Aggiungi queste variabili globali
 bool pinSelectedModelPanel = false;
 ImVec2 selectedPanelSize = ImVec2(350, 0);
 
+// Risultato picking
 void handlePickingResult(const glm::vec3& idColor) {
     unsigned int pickedId = sceneManager.colorToId(idColor);
 
-    // Click nel vuoto → deseleziona sempre
     if (pickedId == 0) {
         sceneManager.deselectAll();
         objectSelected = false;
@@ -717,22 +678,15 @@ void handlePickingResult(const glm::vec3& idColor) {
     sceneManager.selectObject(pickedId);
 
     bool isLight = (pickedId == gDirLightObjectNumericId);
-	bool isLightTarget = (pickedId == gDirLightTargetObjectNumericId);
+    bool isLightTarget = (pickedId == gDirLightTargetObjectNumericId);
     objectSelected = !isLight;
     showSelectedModelPanel = !isLight;
     ImGuizmo::Enable(true);
 
-    if (isLight) {
+    if (isLight || isLightTarget) {
         objectSelected = true;
         showSelectedModelPanel = false;
         ImGuizmo::Enable(true);
-        return;
-    }
-
-    if (isLightTarget) {
-        objectSelected = true;
-        showSelectedModelPanel = false;
-		ImGuizmo::Enable(true);
         return;
     }
 
@@ -741,7 +695,8 @@ void handlePickingResult(const glm::vec3& idColor) {
     }
 }
 
-void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+// Mouse
+void mouseButtonCallback(GLFWwindow* window, int button, int action, int /*mods*/) {
     if (ImGui::GetIO().WantCaptureMouse) return;
     if (objectSelected && (ImGuizmo::IsUsing() || ImGuizmo::IsOver())) return;
 
@@ -749,20 +704,17 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
         double xpos, ypos;
         glfwGetCursorPos(window, &xpos, &ypos);
 
-        // Controlla se ALT è premuto per modalità orbita
         if (glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS ||
             glfwGetKey(window, GLFW_KEY_RIGHT_ALT) == GLFW_PRESS) {
             mouseControl.isOrbiting = true;
             mouseControl.isPressed = false;
             mouseControl.isPanning = false;
         }
-        // Controlla se CTRL è premuto per il panning
         else if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) {
             mouseControl.isPanning = true;
             mouseControl.isOrbiting = false;
             mouseControl.isPressed = false;
         }
-        // Logica per la manipolazione degli oggetti
         else if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS && objectSelected) {
             objectMoving = true;
 
@@ -776,22 +728,22 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
                 currentMoveAxis = MoveAxis::Z_AXIS;
             }
             else {
-                currentMoveAxis = MoveAxis::NONE; // Nessun asse specificato
+                currentMoveAxis = MoveAxis::NONE;
             }
 
-            lastMousePos = glm::vec3((float)xpos, (float)ypos, 0.0f);
+            lastMousePos = glm::vec3(static_cast<float>(xpos), static_cast<float>(ypos), 0.0f);
         }
         else {
             if (pickingEnabled) {
-                processMousePicking((int)xpos, (int)ypos);
+                processMousePicking(static_cast<int>(xpos), static_cast<int>(ypos));
             }
             mouseControl.isOrbiting = false;
             mouseControl.isPanning = false;
             mouseControl.isPressed = true;
         }
 
-        mouseControl.lastX = (float)xpos;
-        mouseControl.lastY = (float)ypos;
+        mouseControl.lastX = static_cast<float>(xpos);
+        mouseControl.lastY = static_cast<float>(ypos);
     }
     else if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
         mouseControl.isPressed = false;
@@ -802,16 +754,14 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     }
 }
 
-// Callback movimento del mouse
-void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
-    float xoffset = (float)xpos - mouseControl.lastX;
-    float yoffset = mouseControl.lastY - (float)ypos;
+void cursorPositionCallback(GLFWwindow* /*window*/, double xpos, double ypos) {
+    float xoffset = static_cast<float>(xpos) - mouseControl.lastX;
+    float yoffset = mouseControl.lastY - static_cast<float>(ypos);
 
-    mouseControl.lastX = (float)xpos;
-    mouseControl.lastY = (float)ypos;
+    mouseControl.lastX = static_cast<float>(xpos);
+    mouseControl.lastY = static_cast<float>(ypos);
 
     const float sensitivity = 0.3f;
-    auto selectedObj = sceneManager.getSelectedObject();
 
     if (mouseControl.isOrbiting) {
         if (mouseControl.camPos.y <= 0.5f && yoffset < 0.0f) {
@@ -826,54 +776,44 @@ void cursorPositionCallback(GLFWwindow* window, double xpos, double ypos) {
             if (mouseControl.orbitalAngleY < -85.0f) mouseControl.orbitalAngleY = -85.0f;
         }
 
-        // Aggiorna sempre l’angolo orizzontale
         mouseControl.orbitalAngleX += xoffset * sensitivity;
-
         updateCameraPosition();
     }
     else if (mouseControl.isPanning) {
         const float panSpeed = 0.003f * mouseControl.cameraDistance;
 
-        // Calcola la direzione di vista della camera e proiettala sul piano XZ
         glm::vec3 viewDir = mouseControl.cameraTarget - mouseControl.camPos;
         glm::vec3 forwardOnPlane = glm::normalize(glm::vec3(viewDir.x, 0.0f, viewDir.z));
         glm::vec3 rightOnPlane = glm::normalize(glm::cross(forwardOnPlane, glm::vec3(0.0f, 1.0f, 0.0f)));
 
-        // Muovi il target della camera solo sul piano XZ
         mouseControl.cameraTarget -= rightOnPlane * xoffset * panSpeed;
-        mouseControl.cameraTarget -= forwardOnPlane * yoffset * panSpeed; // Usa la direzione "avanti" sul piano
+        mouseControl.cameraTarget -= forwardOnPlane * yoffset * panSpeed;
 
-        // Aggiorna la posizione della camera in base al nuovo target
         updateCameraPosition();
     }
 }
 
-// Callback per lo zoom con la rotellina del mouse
-void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
-    if (ImGui::GetIO().WantCaptureMouse) {
-        return;
-    }
+// Scroll
+void scrollCallback(GLFWwindow* /*window*/, double /*xoffset*/, double yoffset) {
+    if (ImGui::GetIO().WantCaptureMouse) return;
 
     float zoomSpeed = 0.5f;
     mouseControl.cameraDistance -= static_cast<float>(yoffset) * zoomSpeed;
 
-    if (mouseControl.cameraDistance < 0.5f) mouseControl.cameraDistance = 0.5f; // Limita la distanza minima della camera
-        if (mouseControl.cameraDistance > 15.0f) mouseControl.cameraDistance = 15.0f; // Limita la distanza massima della camera
+    if (mouseControl.cameraDistance < 0.5f) mouseControl.cameraDistance = 0.5f;
+    if (mouseControl.cameraDistance > 15.0f) mouseControl.cameraDistance = 15.0f;
 
-        updateCameraPosition();
+    updateCameraPosition();
 }
 
-// Callback inizializzazione piking system
+// Picking init
 void initializePickingSystem() {
     if (!pickingBuffer.initialize(gFramebufferWidth, gFramebufferHeight)) {
         Logger::Get().Log(Logger::Level::Error, Logger::Category::System, "Errore nell'inizializzazione del buffer di picking.");
         return;
     }
 
-    pickingShader = LoadShader(
-        "Shaders/Picking.vert",
-        "Shaders/Picking.frag"
-    );
+    pickingShader = LoadShader("Shaders/Picking.vert", "Shaders/Picking.frag");
 
     if (pickingShader == 0) {
         Logger::Get().LogShaderError("Picking", "Errore nel caricamento dello shader di picking.");
@@ -883,6 +823,7 @@ void initializePickingSystem() {
     Logger::Get().LogShaderLoaded("Picking");
 }
 
+// Scene render
 void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projection) {
     glUseProgram(shader);
     SetUniformMat4(shader, "view", view);
@@ -901,7 +842,7 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
         glm::vec3 forward = glm::vec3(rotY * rotX * glm::vec4(0, 0, -1, 0));
         lightDir = glm::normalize(forward);
     }
-    SetUniformInt(shader,  "uDirLight.enabled", gDirLight.enabled ? 1 : 0);
+    SetUniformInt(shader, "uDirLight.enabled", gDirLight.enabled ? 1 : 0);
     SetUniformVec3(shader, "uDirLight.direction", lightDir);
     SetUniformVec3(shader, "uDirLight.color", gDirLight.color);
 
@@ -918,15 +859,14 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     std::vector<std::shared_ptr<SceneObject>> list = sceneManager.getObjects();
-    std::stable_sort(list.begin(), list.end(), [&](const auto& a, const auto& b){
+    std::stable_sort(list.begin(), list.end(), [&](const auto& a, const auto& b) {
         bool aSys = sceneManager.isSystemId(a->getId());
         bool bSys = sceneManager.isSystemId(b->getId());
         if (aSys != bSys) return aSys;
         return a->getId() < b->getId();
-    });
+        });
 
     for (const auto& obj : list) {
-
         if (obj->getId() == gShadowFloorObjectNumericId) {
             continue;
         }
@@ -935,8 +875,8 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
         SetUniformMat4(shader, "model", modelMatrix);
 
         bool isLightIcon = (obj->getId() == gDirLightObjectNumericId);
-		bool isLightTarget = (obj->getId() == gDirLightTargetObjectNumericId);
-		bool isShadowFloor = (obj->getId() == gShadowFloorObjectNumericId);
+        bool isLightTarget = (obj->getId() == gDirLightTargetObjectNumericId);
+		bool isFloor = (obj->getId() == gShadowFloorObjectNumericId);
 
         SetUniformInt(shader, "uLightIcon", isLightIcon ? 1 : 0);
         SetUniformInt(shader, "uLightGradientEnabled", (isLightIcon && gDirLight.useGradient) ? 1 : 0);
@@ -955,10 +895,19 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
         SetUniformInt(shader, "textureSampler", 0);
 
         std::shared_ptr<Model> model = obj->getModel();
+
         if (obj->hasOverrideTexture()) {
-            glBindTexture(GL_TEXTURE_2D, obj->getOverrideTextureID());
-            SetUniformInt(shader, "useOverrideColor", 0);
-            SetUniformInt(shader, "useTexture", 1);
+            GLuint overrideTexID = obj->getOverrideTextureID();
+            if (overrideTexID != 0 && glIsTexture(overrideTexID)) {
+                glBindTexture(GL_TEXTURE_2D, overrideTexID);
+                SetUniformInt(shader, "useOverrideColor", 0);
+                SetUniformInt(shader, "useTexture", 1);
+            }
+            else {
+                glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
+                SetUniformInt(shader, "useOverrideColor", 0);
+                SetUniformInt(shader, "useTexture", 0);
+            }
         }
         else if (obj->hasOverrideColor()) {
             glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
@@ -967,9 +916,17 @@ void renderScene(GLuint shader, const glm::mat4& view, const glm::mat4& projecti
             SetUniformInt(shader, "useTexture", 0);
         }
         else if (model->hasTexture()) {
-            glBindTexture(GL_TEXTURE_2D, model->getTextureID());
-            SetUniformInt(shader, "useOverrideColor", 0);
-            SetUniformInt(shader, "useTexture", 1);
+            GLuint modelTexID = model->getTextureID();
+            if (modelTexID != 0 && glIsTexture(modelTexID)) {
+                glBindTexture(GL_TEXTURE_2D, modelTexID);
+                SetUniformInt(shader, "useOverrideColor", 0);
+                SetUniformInt(shader, "useTexture", 1);
+            }
+            else {
+                glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
+                SetUniformInt(shader, "useOverrideColor", 0);
+                SetUniformInt(shader, "useTexture", 0);
+            }
         }
         else {
             glBindTexture(GL_TEXTURE_2D, TextureManager::getInstance().getDefaultTexture());
@@ -996,19 +953,16 @@ static void renderShadowFloor(const glm::mat4& view, const glm::mat4& projection
 
     glm::mat4 model = floorObj->getModelMatrix();
 
-    // Uniform base (matrici)
     SetUniformMat4(gPlanarFloorShader, "model", model);
     SetUniformMat4(gPlanarFloorShader, "view", view);
     SetUniformMat4(gPlanarFloorShader, "projection", projection);
     SetUniformMat4(gPlanarFloorShader, "lightSpaceMatrix", gShadowMapData.ViewProjection);
 
-    // Parametri floor
     SetUniformFloat(gPlanarFloorShader, "uFloorHeight", gFloorHeight);
     SetUniformInt(gPlanarFloorShader, "uUseShadowMap", 1);
-    SetUniformInt(gPlanarFloorShader, "uShadowMapSize", (int)ShadowMapData::ShadowMapResolution);
-    SetUniformVec3(gPlanarFloorShader, "uBackgroundColor", glm::vec3(0.7f, 0.7f, 0.7f));
+    SetUniformInt(gPlanarFloorShader, "uShadowMapSize", static_cast<int>(ShadowMapData::ShadowMapResolution));
+    SetUniformVec3(gPlanarFloorShader, "uBackgroundColor", glm::vec3(0.7f));
 
-    // Direzione luce
     glm::vec3 lightDir;
     if (gDirLight.useTarget) {
         lightDir = glm::normalize(gDirLight.target - gDirLight.position);
@@ -1024,27 +978,19 @@ static void renderShadowFloor(const glm::mat4& view, const glm::mat4& projection
 
     SetUniformFloat(gPlanarFloorShader, "uShadowStrength", 1.0f);
 
-    // Bind shadow map come sampler2DShadow
     static constexpr GLuint shadowMapUnit = 3;
     glActiveTexture(GL_TEXTURE0 + shadowMapUnit);
     glBindTexture(GL_TEXTURE_2D, gShadowMapData.Image);
 
-    // Imposta compare mode per questo pass (necessario per sampler2DShadow)
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-
     GLint loc = glGetUniformLocation(gPlanarFloorShader, "uShadowMap");
     glUniform1i(loc, shadowMapUnit);
 
-    // Disabilita blending per il floor (il floor di per sé produce colore pieno)
     glDisable(GL_BLEND);
 
-    // Render floor mesh
     if (auto modelPtr = floorObj->getModel()) {
         modelPtr->render();
     }
 
-    // Ripristina stato minimo (compare mode lo lasciamo, non influisce sul sampler2D degli altri shader)
     glUseProgram(0);
 }
 
@@ -1054,6 +1000,7 @@ static void renderShadowFloor(const glm::mat4& view, const glm::mat4& projection
 #include <shlobj.h>
 #endif
 #include <stb_image.h>
+
 std::string openFolderDialog() {
 #ifdef _WIN32
     std::string selectedPath;
@@ -1094,358 +1041,61 @@ std::string openFolderDialog() {
     }
 
     return selectedPath;
-#else
-    return "";
+
 #endif
-}
-
-void renderSceneControlPanel() {
-    if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Text("Scene Management:");
-
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
-
-        if (ImGui::Button("Export Scene Bundle", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))) {
-            std::string folderPath = openFolderDialog();
-            if (!folderPath.empty()) {
-                exportFormatDialog.open(folderPath);
-            }
-            else {
-                Logger::Get().Log(Logger::Level::Info, Logger::Category::Export, "Export cancellato dall'utente");
-            }
-        }
-
-        ImGui::PopStyleColor(3);
-
-        ImGui::Separator();
-        ImGui::Text("Add / Import:");
-
-        // Pulsante Load 3D Model (disabilitato se limite raggiunto)
-        {
-            bool disabled = gFiniteLimitReached && !gInfiniteGrid;
-            if (disabled) ImGui::BeginDisabled();
-
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  disabled ? ImVec4(0.35f, 0.35f, 0.35f, 1.0f)
-                                           : ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                  disabled ? ImVec4(0.45f, 0.45f, 0.45f, 1.0f)
-                                           : ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                                  disabled ? ImVec4(0.25f, 0.25f, 0.25f, 1.0f)
-                                           : ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
-
-            if (ImGui::Button("Load 3D Model", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))
-                && !disabled) {
-                ImGui::OpenPopup("Choose Load Mode");
-            }
-
-            ImGui::PopStyleColor(3);
-            if (disabled) {
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Limite raggiunto in modalita' finita.");
-                }
-                ImGui::EndDisabled();
-            }
-        }
-
-        // Pulsante Load Image (anche lui limitato)
-        {
-            bool disabled = gFiniteLimitReached && !gInfiniteGrid;
-            if (disabled) ImGui::BeginDisabled();
-
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  disabled ? ImVec4(0.35f, 0.35f, 0.35f, 1.0f)
-                                           : ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                  disabled ? ImVec4(0.45f, 0.45f, 0.45f, 1.0f)
-                                           : ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                                  disabled ? ImVec4(0.25f, 0.25f, 0.25f, 1.0f)
-                                           : ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
-
-            if (ImGui::Button("Load Image", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))
-                && !disabled) {
-                openImageFile();
-            }
-
-            ImGui::PopStyleColor(3);
-            if (disabled) {
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Limite raggiunto in modalita' finita.");
-                }
-                ImGui::EndDisabled();
-            }
-        }
-
-        // Popup modalità caricamento (resta invariato salvo condizione di apertura già gestita sopra)
-        if (ImGui::BeginPopupModal("Choose Load Mode", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("How do you want to load this model?");
-            ImGui::Separator();
-
-            if (ImGui::Button("Single Object (Default)", ImVec2(250, 0))) {
-                ModelLoader::openModelFileAdvanced(
-                    modelManager, sceneManager,
-                    mouseControl.camPos, mouseControl.cameraTarget,
-                    objectSelected, showSelectedModelPanel,
-                    ModelLoader::LoadMode::SINGLE_OBJECT);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::TextWrapped("   All meshes in one selectable object");
-
-            ImGui::Spacing();
-
-            if (ImGui::Button("Separate Meshes", ImVec2(250, 0))) {
-                ModelLoader::openModelFileAdvanced(
-                    modelManager, sceneManager,
-                    mouseControl.camPos, mouseControl.cameraTarget,
-                    objectSelected, showSelectedModelPanel,
-                    ModelLoader::LoadMode::SEPARATE_MESHES);
-                ImGui::CloseCurrentPopup();
-            }
-            ImGui::TextWrapped("   Each mesh becomes a separate object");
-
-            ImGui::Separator();
-
-            if (ImGui::Button("Cancel", ImVec2(250, 0))) {
-                ImGui::CloseCurrentPopup();
-            }
-
-            ImGui::EndPopup();
-        }
-
-        ImGui::Separator();
-        ImGui::Text("Add Built-in Object:");
-
-        std::vector<std::string> modelNames = modelManager.getModelNames();
-        modelNames.erase(std::remove(modelNames.begin(), modelNames.end(), "ImagePlane"), modelNames.end());
-        static int selectedModelIndex = 0;
-
-        if (!modelNames.empty()) {
-            ImGui::Combo("Model Type", &selectedModelIndex,
-                         [](void* data, int idx, const char** out_text) {
-                             auto& names = *static_cast<std::vector<std::string>*>(data);
-                             if (idx >= 0 && idx < (int)names.size()) {
-                                 *out_text = names[idx].c_str();
-                                 return true;
-                             }
-                             return false;
-                         },
-                         &modelNames,
-                         (int)modelNames.size());
-
-            bool disabled = (!gInfiniteGrid && gFiniteLimitReached);
-
-            if (disabled) ImGui::BeginDisabled();
-
-            ImGui::PushStyleColor(ImGuiCol_Button,
-                                  disabled ? ImVec4(0.35f, 0.35f, 0.35f, 1.0f)
-                                           : ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
-                                  disabled ? ImVec4(0.45f, 0.45f, 0.45f, 1.0f)
-                                           : ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
-                                  disabled ? ImVec4(0.25f, 0.25f, 0.25f, 1.0f)
-                                           : ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
-
-            if (ImGui::Button("Add Object", ImVec2(ImGui::GetWindowWidth() * 0.8f, 30))
-                && !disabled && selectedModelIndex < (int)modelNames.size()) {
-
-                const std::string& modelName = modelNames[selectedModelIndex];
-                glm::vec3 spawnPos = calculateSpawnPosition(modelName, mouseControl.cameraTarget, sceneManager);
-
-                if (!gInfiniteGrid) {
-                    glm::vec3 clamped = clampToFiniteSpace(spawnPos);
-                    if (clamped != spawnPos) {
-                        gLastPlacementClamped = true;
-                        gBoundaryWarningMessage = "Posizione fuori area: adattata ai confini.";
-                        spawnPos = clamped;
-                    } else {
-                        gLastPlacementClamped = false;
-                    }
-                }
-
-                auto newObj = sceneManager.addObject(modelName, spawnPos);
-                if (newObj) {
-                    sceneManager.applyDefaultName(newObj->getId(), modelName);
-                    sceneManager.selectObject(newObj->getId());
-                    objectSelected = true;
-                    showSelectedModelPanel = true;
-                }
-            }
-
-            ImGui::PopStyleColor(3);
-
-            if (disabled) {
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Limite massimo (%d) raggiunto.", gFiniteModeMaxObjects);
-                }
-                ImGui::EndDisabled();
-            }
-        }
-
-        ImGui::Separator();
-
-
-        // Variabili per gestire la rinomina
-        static bool isRenaming = false;
-        static unsigned int renamingId = 0;
-        static char renameBuffer[128] = "";
-
-        std::vector<std::shared_ptr<SceneObject>> userObjects;
-        std::vector<std::shared_ptr<SceneObject>> systemObjects;
-
-        for (const auto& obj : sceneManager.getObjects()) {
-            if (sceneManager.isSystemId(obj->getId())) {
-                systemObjects.push_back(obj);
-            }
-            else {
-                userObjects.push_back(obj);
-            }
-        }
-
-        ImGui::Text("User Objects (%zu/%d):", userObjects.size(), gFiniteModeMaxObjects);
-
-        // Sezione oggetti utente
-        for (const auto& obj : userObjects) {
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-            if (obj->getSelected()) flags |= ImGuiTreeNodeFlags_Selected;
-
-            bool renamingThis = isRenaming && renamingId == obj->getId();
-            if (renamingThis) {
-                ImGui::PushID(static_cast<int>(obj->getId()));
-                if (ImGui::InputText("##rename_user", renameBuffer, sizeof(renameBuffer),
-                    ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    sceneManager.renameObject(obj->getId(), renameBuffer);
-                    isRenaming = false;
-                }
-                if (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0)) {
-                    isRenaming = false;
-                }
-                ImGui::PopID();
-            }
-            else {
-                ImGui::TreeNodeEx(obj->getName().c_str(), flags);
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                    isRenaming = true;
-                    renamingId = obj->getId();
-                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
-                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                }
-            }
-
-            if (!renamingThis && ImGui::IsItemClicked()) {
-                sceneManager.selectObject(obj->getId());
-                objectSelected = true;
-                showSelectedModelPanel = true;
-                showDirectionalLightWindow = false;
-            }
-
-            if (ImGui::BeginPopupContextItem()) {
-                if (ImGui::MenuItem("Rename")) {
-                    isRenaming = true;
-                    renamingId = obj->getId();
-                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
-                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                }
-                if (ImGui::MenuItem("Delete")) {
-                    unsigned int idToRemove = obj->getId();
-                    if (obj->getSelected()) {
-                        objectSelected = false;
-                        showSelectedModelPanel = false;
-                    }
-                    sceneManager.removeObject(idToRemove);
-                    ImGui::EndPopup();
-                    break;
-                }
-                ImGui::EndPopup();
-            }
-        }
-
-        ImGui::Separator();
-        ImGui::TextDisabled("System Objects (%zu):", systemObjects.size());
-
-        // Sezione oggetti di sistema (solo selezione / rename opzionale luce)
-        for (const auto& obj : systemObjects) {
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-            if (obj->getSelected()) flags |= ImGuiTreeNodeFlags_Selected;
-
-            bool renamingThis = isRenaming && renamingId == obj->getId();
-            bool isLight = (obj->getId() == gDirLightObjectNumericId);
-            bool isLightTarget = (obj->getId() == gDirLightTargetObjectNumericId);
-
-            if (renamingThis && isLight) {
-                ImGui::PushID(static_cast<int>(obj->getId()));
-                if (ImGui::InputText("##rename_sys", renameBuffer, sizeof(renameBuffer),
-                    ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    sceneManager.renameObject(obj->getId(), renameBuffer);
-                    isRenaming = false;
-                }
-                if (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0)) {
-                    isRenaming = false;
-                }
-                ImGui::PopID();
-            }
-            else {
-                ImGui::TreeNodeEx(obj->getName().c_str(), flags);
-                if (isLight && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-                    isRenaming = true;
-                    renamingId = obj->getId();
-                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
-                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                }
-            }
-
-            if (!renamingThis && ImGui::IsItemClicked()) {
-                sceneManager.selectObject(obj->getId());
-                objectSelected = (!isLight);
-                showSelectedModelPanel = !isLight;
-                if (isLight && !pinDirectionalLightWindow) {
-                    showDirectionalLightWindow = true;
-                }
-            }
-
-            if (ImGui::BeginPopupContextItem()) {
-                if ((isLight || isLightTarget) && ImGui::MenuItem("Rename")) {
-                    isRenaming = true;
-                    renamingId = obj->getId();
-                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
-                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
-                }
-                ImGui::TextDisabled("System object");
-                ImGui::EndPopup();
-            }
-        }
-
-        ImGui::Separator();
-        ImGui::Checkbox("Enable Picking", &pickingEnabled);
-    }
 }
 
 // Dialog informativo limite oggetti in modalità finita
 void renderFiniteLimitDialog() {
     if (!showFiniteLimitDialog || !gFiniteLimitReached) return;
 
-    ImGui::SetNextWindowSize(ImVec2(360, 150), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(20 + SIDEBAR_WIDTH, 20), ImGuiCond_FirstUseEver);
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(500, 150), ImVec2(800, 400));
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    ImGui::OpenPopup("Limite oggetti raggiunto");
 
-    if (ImGui::Begin("Limite oggetti raggiunto", &showFiniteLimitDialog, flags)) {
-        ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.25f, 1.0f),
-            "Limite massimo di %d oggetti raggiunto.", gFiniteModeMaxObjects);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, 20));
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.75f, 0.55f, 0.15f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.85f, 0.65f, 0.20f, 1.0f));
+
+    if (ImGui::BeginPopupModal("Limite oggetti raggiunto", &showFiniteLimitDialog,
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings)) {
+
+        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
+
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.20f, 1.0f), "WARNING");
+        ImGui::SameLine();
+        ImGui::TextWrapped("Limite massimo di %d oggetti raggiunto.", gFiniteModeMaxObjects);
+
         ImGui::Separator();
         ImGui::TextWrapped("Passa a 'Infinita' nella sezione Grid Mode per rimuovere questo limite.");
-        ImGui::Spacing();
-        if (ImGui::Button("Nascondi", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+
+        ImGui::PopTextWrapPos();
+
+        ImGui::Separator();
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
+
+        float buttonWidth = 140.0f;
+        float avail = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX((avail - buttonWidth) * 0.5f);
+
+        if (ImGui::Button("Chiudi", ImVec2(buttonWidth, 32)) ||
+            ImGui::IsKeyPressed(ImGuiKey_Escape) ||
+            ImGui::IsKeyPressed(ImGuiKey_Enter)) {
             showFiniteLimitDialog = false;
+            ImGui::CloseCurrentPopup();
         }
+
+        ImGui::EndPopup();
     }
-    ImGui::End();
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
 }
 
+// Texture
 void openTextureFile() {
     std::string texturePath;
     GLuint textureID;
@@ -1454,17 +1104,13 @@ void openTextureFile() {
     if (ModelLoader::openTextureFile(modelManager, sceneManager,
         texturePath, textureID, needsConfirmation)) {
         if (needsConfirmation && !dontAskTextureReplace) {
-            // Mostra dialogo di conferma
             textureReplaceDialog.show = true;
             textureReplaceDialog.texturePath = texturePath;
             textureReplaceDialog.newTextureID = textureID;
         }
         else if (needsConfirmation && dontAskTextureReplace) {
-            // Applica la texture E pulisci il colore
             if (auto selectedObj = sceneManager.getSelectedObject()) {
                 selectedObj->setOverrideTexture(textureID);
-            }
-            if (auto selectedObj = sceneManager.getSelectedObject()) {
                 selectedObj->clearOverrideColor();
             }
         }
@@ -1482,50 +1128,21 @@ bool shouldBlockAdd() {
     return (!gInfiniteGrid && gFiniteLimitReached);
 }
 
+// Model loading
 void openModelFile() {
     if (shouldBlockAdd()) {
         showFiniteLimitDialog = true;
         return;
     }
-    // Timing preciso per loading dialog
-    auto loadStartTime = std::chrono::steady_clock::now();
-    bool dialogShown = false;
-    
+
     glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
-        mouseControl.camPos, 
-        mouseControl.cameraTarget, 
-        0.5f, 1.0f 
+        mouseControl.camPos,
+        mouseControl.cameraTarget,
+        0.5f, 1.0f
     );
-    
-    // Prepara il callback per progress updates CON TIMING
-    auto progressCallback = [&dialogShown, &loadStartTime](float progress, const std::string& message) {
-        auto elapsed = std::chrono::steady_clock::now() - loadStartTime;
-        auto elapsedSeconds = std::chrono::duration<float>(elapsed).count();
-        
-        // Mostra dialog solo se passano più di 2 secondi
-        if (elapsedSeconds > 2.0f && !dialogShown) {
-            loadingDialog.start("Loading model...");
-            dialogShown = true;
-        }
-        
-        if (dialogShown) {
-            loadingDialog.updateProgress(progress, message);
-            
-            // Forza rendering durante il caricamento
-            glfwPollEvents();
-            
-            ImGui_ImplOpenGL3_NewFrame();
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
-            
-            renderLoadingDialog();
-            
-            ImGui::Render();
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-            glfwSwapBuffers(glfwGetCurrentContext());
-        }
-    };
-    
+
+    auto progressCallback = [](float /*progress*/, const std::string& /*message*/) {};
+
     bool success = ModelLoader::openModelFileAdvanced(
         modelManager, sceneManager,
         mouseControl.camPos, mouseControl.cameraTarget,
@@ -1533,76 +1150,42 @@ void openModelFile() {
         ModelLoader::LoadMode::SEPARATE_MESHES,
         progressCallback
     );
-    
-    auto totalElapsed = std::chrono::steady_clock::now() - loadStartTime;
-    auto totalSeconds = std::chrono::duration<float>(totalElapsed).count();
-    
-    if (success) {
-        if (dialogShown) {
 
-            std::string successMessage = "Model loaded successfully!\n\n";
-            successMessage += "Time: " + std::to_string(totalSeconds) + " seconds\n";
-            // Dettagli mesh e texture
-            auto& objects = sceneManager.getObjects();
-            if (!objects.empty()) {
-                int meshCount = 0;
-                int textureCount = 0;
-                
-                for (const auto& obj : objects) {
-                    if (obj->getModel()) {
-                        meshCount++;
-                        if (obj->getModel()->hasTexture()) {
-                            textureCount++;
-                        }
-                    }
-                }
-                
-                successMessage += "Meshes: " + std::to_string(meshCount) + "\n";
-                successMessage += "Textures: " + std::to_string(textureCount) + "\n";
-            }
-            
-            loadingDialog.complete();
-            loadingDialog.statusMessage = successMessage;
-            
-            // Auto-chiudi dopo 3 secondi
-            std::thread([]{
-                std::this_thread::sleep_for(std::chrono::milliseconds(3000));
-                loadingDialog.reset();
-            }).detach();
-        }
-    } else {
-        if (dialogShown) {
-            loadingDialog.error("Failed to load model");
-        }
+    if (!success) {
+        errorDialog.show = true;
+        errorDialog.title = "Model Loading Error";
+        errorDialog.message = "Failed to load model.";
     }
 }
 
+// Image file
 void openImageFile() {
     if (shouldBlockAdd()) {
         showFiniteLimitDialog = true;
         return;
     }
-    // Calcola la posizione di spawn valida
+
     glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
-        mouseControl.camPos, 
-        mouseControl.cameraTarget, 
-        0.5f,  // offset Y
-        1.0f   // raggio collisione
+        mouseControl.camPos,
+        mouseControl.cameraTarget,
+        0.5f,
+        1.0f
     );
-    
+
+    spawnPos.y = (std::max)(spawnPos.y, minHeight);
+
     std::string errorMessage;
-    
+
     bool success = ModelLoader::openImageFile(
-        modelManager, 
+        modelManager,
         sceneManager,
-        mouseControl.camPos, 
+        mouseControl.camPos,
         spawnPos,
-        objectSelected, 
-        showSelectedModelPanel, 
+        objectSelected,
+        showSelectedModelPanel,
         errorMessage
     );
-    
-    // Gestione errori
+
     if (!success && !errorMessage.empty()) {
         errorDialog.show = true;
         errorDialog.title = "Image Loading Error";
@@ -1610,67 +1193,61 @@ void openImageFile() {
     }
 }
 
+// Export dialog
 void renderExportFormatDialog() {
     if (!exportFormatDialog.show) return;
-    
+
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_Always);
-    
+
     ImGui::OpenPopup("Export 3D Scene");
-    
+
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
     ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
-    
-    if (ImGui::BeginPopupModal("Export 3D Scene", &exportFormatDialog.show, 
-                               ImGuiWindowFlags_NoResize)) {
-        
+
+    if (ImGui::BeginPopupModal("Export 3D Scene", &exportFormatDialog.show,
+        ImGuiWindowFlags_NoResize)) {
+
         ImGui::TextWrapped("Scegli il formato di export per la tua scena 3D.");
         ImGui::Separator();
         ImGui::Spacing();
-        
-        // Lista formati con radio buttons
+
         ImGui::Text("Formato File:");
         ImGui::Spacing();
-        
+
         for (size_t i = 0; i < exportFormatDialog.formats.size(); i++) {
             const auto& fmt = exportFormatDialog.formats[i];
-            
-            bool isSelected = (i == exportFormatDialog.selectedFormatIndex);
-            
+            bool isSelected = (i == static_cast<size_t>(exportFormatDialog.selectedFormatIndex));
+
             if (ImGui::RadioButton(fmt.name.c_str(), isSelected)) {
                 exportFormatDialog.selectedFormatIndex = static_cast<int>(i);
             }
-            
+
             ImGui::SameLine();
             ImGui::TextDisabled("(%s)", fmt.extension.c_str());
-            
-            // Descrizione del formato
+
             ImGui::Indent(30);
             ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
             ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", fmt.description.c_str());
-            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "→ %s", fmt.useCases.c_str());
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "%s", fmt.useCases.c_str());
             ImGui::PopTextWrapPos();
             ImGui::Unindent(30);
-            
+
             ImGui::Spacing();
         }
-        
+
         ImGui::Separator();
-        
-        // Opzioni aggiuntive
         ImGui::Spacing();
         ImGui::Text("Opzioni:");
 
-        // Opzione embedding (se supportato)
-        if (exportFormatDialog.selectedFormatIndex < exportFormatDialog.formats.size()) {
+        if (exportFormatDialog.selectedFormatIndex < static_cast<int>(exportFormatDialog.formats.size())) {
             const auto& selectedFmt = exportFormatDialog.formats[exportFormatDialog.selectedFormatIndex];
 
             bool canEmbed = selectedFmt.supportsTextures && selectedFmt.supportsEmbeddedTextures;
-            bool canCopy  = selectedFmt.supportsTextures;
+            bool canCopy = selectedFmt.supportsTextures;
 
-            // Embed checkbox: disabilitata se non supportata
             if (!canEmbed) ImGui::BeginDisabled();
             ImGui::Checkbox("Incorpora texture nel file (se supportato)", &exportFormatDialog.embedTextures);
             if (!canEmbed) {
@@ -1690,13 +1267,14 @@ void renderExportFormatDialog() {
                 ImGui::TextDisabled("Con incorporamento attivo non è necessaria la copia esterna.");
             }
             if (!canEmbed && canCopy) {
-                // formato senza embed: forzo copia
                 exportFormatDialog.copyTextures = true;
                 ImGui::TextDisabled("Le texture saranno salvate in 'textures/' accanto al file.");
             }
             if (!canCopy) ImGui::EndDisabled();
 
-            bool embed = exportFormatDialog.embedTextures && selectedFmt.supportsEmbeddedTextures && selectedFmt.supportsTextures;
+            bool embed = exportFormatDialog.embedTextures &&
+                selectedFmt.supportsEmbeddedTextures &&
+                selectedFmt.supportsTextures;
             bool copy = selectedFmt.supportsTextures && exportFormatDialog.copyTextures && !embed;
 
             ImGui::Spacing();
@@ -1719,7 +1297,6 @@ void renderExportFormatDialog() {
             }
             ImGui::Unindent(20);
 
-            // Dettagli formato selezionato
             ImGui::Text("Dettagli Formato:");
             ImGui::Indent(20);
             ImGui::BulletText("Materiali: %s", selectedFmt.supportsMaterials ? "Sì" : "No");
@@ -1729,21 +1306,20 @@ void renderExportFormatDialog() {
             ImGui::BulletText("Tipo: %s", selectedFmt.isBinary ? "Binario" : "Testo");
             ImGui::Unindent(20);
         }
-        
+
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
-        
-        // Pulsanti azione
+
         float buttonWidth = (ImGui::GetContentRegionAvail().x - 10) / 2;
-        
+
         if (ImGui::Button("Annulla", ImVec2(buttonWidth, 35))) {
             exportFormatDialog.reset();
             ImGui::CloseCurrentPopup();
         }
-        
+
         ImGui::SameLine();
-        
+
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.2f, 1.0f));
@@ -1761,17 +1337,19 @@ void renderExportFormatDialog() {
 
             Logger::Get().LogExportStarted(selectedFmt.name, outputPath);
 
-            // Determina i flag effettivi
-            bool embed = exportFormatDialog.embedTextures && selectedFmt.supportsEmbeddedTextures && selectedFmt.supportsTextures;
-            bool copy  = exportFormatDialog.copyTextures && selectedFmt.supportsTextures && !embed;
+            bool embed = exportFormatDialog.embedTextures &&
+                selectedFmt.supportsEmbeddedTextures &&
+                selectedFmt.supportsTextures;
+            bool copy = exportFormatDialog.copyTextures &&
+                selectedFmt.supportsTextures && !embed;
 
             auto result = AssimpSceneExporter::exportScene(
                 sceneManager,
                 modelManager,
                 outputPath,
                 selectedFmt.id,
-                copy,     // copyTextures
-                embed     // embedTextures
+                copy,
+                embed
             );
 
             if (result.success) {
@@ -1786,8 +1364,7 @@ void renderExportFormatDialog() {
                 successDialog.show = true;
                 successDialog.title = "Export Successful";
                 successDialog.message = "Scena esportata con successo!";
-                
-                // Dettagli arricchiti
+
                 std::stringstream details;
                 details
                     << "Formato: " << selectedFmt.name << "\n"
@@ -1801,9 +1378,11 @@ void renderExportFormatDialog() {
                 if (selectedFmt.supportsTextures) {
                     if (result.texturesEmbedded) {
                         details << "Texture: " << result.texturesEmbeddedCount << " (incorporate)\n";
-                    } else if (result.externalTexturesCopied) {
+                    }
+                    else if (result.externalTexturesCopied) {
                         details << "Texture: " << result.texturesCopiedCount << " (copiate in /textures)\n";
-                    } else {
+                    }
+                    else {
                         details << "Texture: " << result.totalTextures << "\n";
                     }
                     if (result.texturesMissing > 0) {
@@ -1817,7 +1396,7 @@ void renderExportFormatDialog() {
                         details << " - " << w << "\n";
                     }
                 }
-                
+
                 successDialog.details = details.str();
             }
             else {
@@ -1827,21 +1406,21 @@ void renderExportFormatDialog() {
                 errorDialog.title = "Export Error";
                 errorDialog.message = result.errorMessage;
             }
-            
+
             exportFormatDialog.reset();
             ImGui::CloseCurrentPopup();
         }
-        
+
         ImGui::PopStyleColor(3);
-        
+
         ImGui::EndPopup();
     }
-    
+
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
 }
 
-// Aggiorna stato limite in modalità finita; apre il dialog quando si raggiunge per la prima volta
+// Aggiorna stato limite in modalità finita
 void updateFiniteLimitState() {
     static bool previousReached = false;
 
@@ -1852,7 +1431,6 @@ void updateFiniteLimitState() {
         return;
     }
 
-    // Conta solo gli oggetti non di sistema
     size_t nonSystemCount = 0;
     for (const auto& obj : sceneManager.getObjects()) {
         if (sceneManager.isSystemId(obj->getId())) continue;
@@ -1868,6 +1446,7 @@ void updateFiniteLimitState() {
     previousReached = gFiniteLimitReached;
 }
 
+// Errore cambio grid mode
 static void renderGridModeSwitchErrorDialog() {
     if (!showGridModeSwitchErrorPopup) return;
 
@@ -1907,7 +1486,7 @@ static void renderGridModeSwitchErrorDialog() {
     ImGui::PopStyleVar();
 }
 
-// Separator 
+// Separator
 void renderSeparator() {
     ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.4f, 0.4f, 0.45f, 0.6f));
     ImGui::Separator();
@@ -1997,9 +1576,11 @@ void renderSectionGridMode() {
 
 // Scene Objects
 void renderSectionSceneObjects() {
+
+    bool disabled = gFiniteLimitReached && !gInfiniteGrid;
+
     if (ImGui::CollapsingHeader("Scene Objects", ImGuiTreeNodeFlags_DefaultOpen)) {
 
-        // Export Button
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
@@ -2013,19 +1594,15 @@ void renderSectionSceneObjects() {
         ImGui::PopStyleColor(3);
 
         ImGui::Spacing();
-
-        // Add/Import Buttons
         ImGui::Text("Add / Import:");
 
-        bool disabled = gFiniteLimitReached && !gInfiniteGrid;
         if (disabled) ImGui::BeginDisabled();
-
         ImGui::PushStyleColor(ImGuiCol_Button, disabled ? ImVec4(0.35f, 0.35f, 0.35f, 1.0f) : ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, disabled ? ImVec4(0.45f, 0.45f, 0.45f, 1.0f) : ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, disabled ? ImVec4(0.25f, 0.25f, 0.25f, 1.0f) : ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
 
         if (ImGui::Button("Load 3D Model", ImVec2(-1, 28)) && !disabled) {
-            ImGui::OpenPopup("Choose Load Mode");
+			ImGui::OpenPopup("Choose Load Mode");
         }
 
         if (ImGui::Button("Load Image", ImVec2(-1, 28)) && !disabled) {
@@ -2036,12 +1613,12 @@ void renderSectionSceneObjects() {
         if (disabled) ImGui::EndDisabled();
 
         ImGui::Spacing();
-
-        // Built-in Objects
         ImGui::Text("Add Built-in:");
 
         std::vector<std::string> modelNames = modelManager.getModelNames();
-        modelNames.erase(std::remove(modelNames.begin(), modelNames.end(), "ImagePlane"), modelNames.end());
+        modelNames.erase(std::remove_if(modelNames.begin(), modelNames.end(), [](const std::string& name) 
+            { return name == "ImagePlane" || name == "ShadowFloor";}), modelNames.end());
+
         static int selectedModelIndex = 0;
 
         if (!modelNames.empty()) {
@@ -2049,23 +1626,23 @@ void renderSectionSceneObjects() {
             ImGui::Combo("##ModelType", &selectedModelIndex,
                 [](void* data, int idx, const char** out_text) {
                     auto& names = *static_cast<std::vector<std::string>*>(data);
-                    if (idx >= 0 && idx < (int)names.size()) {
+                    if (idx >= 0 && idx < static_cast<int>(names.size())) {
                         *out_text = names[idx].c_str();
                         return true;
                     }
                     return false;
                 },
                 &modelNames,
-                (int)modelNames.size());
+                static_cast<int>(modelNames.size()));
             ImGui::PopItemWidth();
 
             if (disabled) ImGui::BeginDisabled();
-
             ImGui::PushStyleColor(ImGuiCol_Button, disabled ? ImVec4(0.35f, 0.35f, 0.35f, 1.0f) : ImVec4(0.2f, 0.6f, 0.4f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, disabled ? ImVec4(0.45f, 0.45f, 0.45f, 1.0f) : ImVec4(0.3f, 0.7f, 0.5f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, disabled ? ImVec4(0.25f, 0.25f, 0.25f, 1.0f) : ImVec4(0.1f, 0.5f, 0.3f, 1.0f));
 
-            if (ImGui::Button("Add Object", ImVec2(-1, 28)) && !disabled && selectedModelIndex < (int)modelNames.size()) {
+            if (ImGui::Button("Add Object", ImVec2(-1, 28)) &&
+                !disabled && selectedModelIndex < static_cast<int>(modelNames.size())) {
                 const std::string& modelName = modelNames[selectedModelIndex];
                 glm::vec3 spawnPos = calculateSpawnPosition(modelName, mouseControl.cameraTarget, sceneManager);
 
@@ -2076,9 +1653,9 @@ void renderSectionSceneObjects() {
                         spawnPos = clamped;
                     }
                 }
+				spawnPos.y = (std::max)(spawnPos.y, minHeight);
 
-                auto newObj = sceneManager.addObject(modelName, spawnPos);
-                if (newObj) {
+                if (auto newObj = sceneManager.addObject(modelName, spawnPos)) {
                     sceneManager.applyDefaultName(newObj->getId(), modelName);
                     sceneManager.selectObject(newObj->getId());
                     objectSelected = true;
@@ -2091,12 +1668,10 @@ void renderSectionSceneObjects() {
         }
 
         ImGui::Spacing();
-
-        // Object List
         ImGui::Text("Objects:");
 
         float listHeight = ImGui::GetContentRegionAvail().y - 60;
-        if (listHeight < 100) listHeight = 100;
+        if (listHeight < 100.0f) listHeight = 100.0f;
 
         ImGui::BeginChild("##ObjectsList", ImVec2(0, listHeight), true, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
@@ -2106,7 +1681,6 @@ void renderSectionSceneObjects() {
 
         std::vector<std::shared_ptr<SceneObject>> userObjects;
         std::vector<std::shared_ptr<SceneObject>> systemObjects;
-
         for (const auto& obj : sceneManager.getObjects()) {
             if (sceneManager.isSystemId(obj->getId())) {
                 systemObjects.push_back(obj);
@@ -2117,7 +1691,6 @@ void renderSectionSceneObjects() {
         }
 
         ImGui::Text("User (%zu/%d):", userObjects.size(), gFiniteModeMaxObjects);
-
         for (const auto& obj : userObjects) {
             ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
             if (obj->getSelected()) flags |= ImGuiTreeNodeFlags_Selected;
@@ -2125,7 +1698,7 @@ void renderSectionSceneObjects() {
             bool renamingThis = isRenaming && renamingId == obj->getId();
             if (renamingThis) {
                 ImGui::PushID(static_cast<int>(obj->getId()));
-                if (ImGui::InputText("##rename", renameBuffer, sizeof(renameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (ImGui::InputText("##rename_user", renameBuffer, sizeof(renameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
                     sceneManager.renameObject(obj->getId(), renameBuffer);
                     isRenaming = false;
                 }
@@ -2174,24 +1747,97 @@ void renderSectionSceneObjects() {
 
         ImGui::Spacing();
         ImGui::TextDisabled("System (%zu):", systemObjects.size());
-
         for (const auto& obj : systemObjects) {
             ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
             if (obj->getSelected()) flags |= ImGuiTreeNodeFlags_Selected;
 
-            ImGui::TreeNodeEx(obj->getName().c_str(), flags);
+            bool renamingThis = isRenaming && renamingId == obj->getId();
+            bool isLight = (obj->getId() == gDirLightObjectNumericId);
+            bool isLightTarget = (obj->getId() == gDirLightTargetObjectNumericId);
+            bool isFloor = (obj->getId() == gShadowFloorObjectNumericId);
 
-            if (ImGui::IsItemClicked()) {
+            if (renamingThis && (isLight || isLightTarget)) {
+                ImGui::PushID(static_cast<int>(obj->getId()));
+                if (ImGui::InputText("##rename_sys", renameBuffer, sizeof(renameBuffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    sceneManager.renameObject(obj->getId(), renameBuffer);
+                    isRenaming = false;
+                }
+                if (!ImGui::IsItemActive() && ImGui::IsMouseClicked(0)) {
+                    isRenaming = false;
+                }
+                ImGui::PopID();
+            }
+            else {
+                ImGui::TreeNodeEx(obj->getName().c_str(), flags);
+                if ((isLight || isLightTarget) && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    isRenaming = true;
+                    renamingId = obj->getId();
+                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
+                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
+                }
+            }
+
+            if (!renamingThis && ImGui::IsItemClicked()) {
                 sceneManager.selectObject(obj->getId());
-                bool isLight = (obj->getId() == gDirLightObjectNumericId);
-                objectSelected = !isLight;
-                showSelectedModelPanel = !isLight;
+                objectSelected = !(isLight || isLightTarget || isFloor);
+                showSelectedModelPanel = !(isLight || isLightTarget || isFloor);
+                if (isLight && !pinDirectionalLightWindow) {
+                    showDirectionalLightWindow = true;
+                }
+            }
+
+            if (ImGui::BeginPopupContextItem()) {
+                if ((isLight || isLightTarget) && ImGui::MenuItem("Rename")) {
+                    isRenaming = true;
+                    renamingId = obj->getId();
+                    strncpy(renameBuffer, obj->getName().c_str(), sizeof(renameBuffer) - 1);
+                    renameBuffer[sizeof(renameBuffer) - 1] = '\0';
+                }
+                ImGui::TextDisabled("System object");
+                ImGui::EndPopup();
             }
         }
 
         ImGui::EndChild();
-
         ImGui::Checkbox("Enable Picking", &pickingEnabled);
+
+        {
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+
+            if (ImGui::BeginPopupModal("Choose Load Mode", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+                ImGui::Text("How do you want to load this model?");
+                ImGui::Separator();
+
+                if (ImGui::Button("Single Object", ImVec2(260, 0))) {
+                    ModelLoader::openModelFileAdvanced(
+                        modelManager, sceneManager,
+                        mouseControl.camPos, mouseControl.cameraTarget,
+                        objectSelected, showSelectedModelPanel,
+                        ModelLoader::LoadMode::SINGLE_OBJECT);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::TextWrapped("All meshes in one selectable object");
+                ImGui::Spacing();
+
+                if (ImGui::Button("Separate Meshes", ImVec2(260, 0))) {
+                    ModelLoader::openModelFileAdvanced(
+                        modelManager, sceneManager,
+                        mouseControl.camPos, mouseControl.cameraTarget,
+                        objectSelected, showSelectedModelPanel,
+                        ModelLoader::LoadMode::SEPARATE_MESHES);
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::TextWrapped("Each mesh becomes a separate object");
+                ImGui::Separator();
+
+                if (ImGui::Button("Cancel", ImVec2(260, 0))) {
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
+        }
     }
 }
 
@@ -2214,11 +1860,6 @@ void renderSectionCamera() {
 // Lighting
 void renderSectionLighting() {
     if (ImGui::CollapsingHeader("Lighting")) {
-        ImGui::Text("Ambient:");
-        ImGui::PushItemWidth(-1);
-        ImGui::SliderFloat("##AmbIntensity", &gLighting.ambientIntensity, 0.0f, 1.0f);
-        ImGui::ColorEdit3("##AmbColor", &gLighting.ambientColor.x, ImGuiColorEditFlags_NoInputs);
-        ImGui::PopItemWidth();
 
         ImGui::Spacing();
 
@@ -2226,10 +1867,6 @@ void renderSectionLighting() {
         ImGui::Checkbox("Enabled##DirLight", &gDirLight.enabled);
         ImGui::SameLine();
         ImGui::Checkbox("Shadows", &gDirLight.enablePlanarShadows);
-
-        ImGui::PushItemWidth(-1);
-        ImGui::ColorEdit3("##DirColor", &gDirLight.color.x, ImGuiColorEditFlags_NoInputs);
-        ImGui::PopItemWidth();
     }
 }
 
@@ -2253,13 +1890,13 @@ void renderSectionActions() {
 }
 
 static void OpenUrlInBrowser(const char* url) {
-    #ifdef _WIN32
-	ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
-    #endif
+#ifdef _WIN32
+    ShellExecuteA(nullptr, "open", url, nullptr, nullptr, SW_SHOWNORMAL);
+#endif
 }
 
 int main() {
-    Logger::Get().Log(Logger::Level::Trace, Logger::Category::System, 
+    Logger::Get().Log(Logger::Level::Trace, Logger::Category::System,
         "Working directory: " + std::filesystem::current_path().string());
 
     Window win;
@@ -2268,7 +1905,6 @@ int main() {
         return -1;
     }
 
-    // Carica l'icona della finestra
     GLFWimage icon;
     int iconWidth, iconHeight, iconChannels;
     unsigned char* iconData = stbi_load("Assets/Images/logo.png", &iconWidth, &iconHeight, &iconChannels, 4);
@@ -2279,7 +1915,8 @@ int main() {
         glfwSetWindowIcon(win.getGLFWwindow(), 1, &icon);
         stbi_image_free(iconData);
         Logger::Get().Log(Logger::Level::Trace, Logger::Category::System, "Icona finestra caricata");
-    } else {
+    }
+    else {
         Logger::Get().Log(Logger::Level::Warn, Logger::Category::System, "Impossibile caricare icona finestra");
     }
 
@@ -2289,7 +1926,6 @@ int main() {
     logger.SetNotionFormUrl("");
     logger.Log(Logger::Level::Info, Logger::Category::App, "Applicazione avviata.");
 
-    // Resto dell'inizializzazione invariato...
     glfwSetMouseButtonCallback(win.getGLFWwindow(), mouseButtonCallback);
     glfwSetCursorPosCallback(win.getGLFWwindow(), cursorPositionCallback);
     glfwSetScrollCallback(win.getGLFWwindow(), scrollCallback);
@@ -2304,11 +1940,10 @@ int main() {
 
     ApplayModernRoundedStyle();
 
-    // Customizza la title bar nativa
-    #ifdef _WIN32
+#ifdef _WIN32
+    {
         HWND hwnd = glfwGetWin32Window(win.getGLFWwindow());
         if (hwnd) {
-            // Abilita dark mode title bar
             BOOL useDarkMode = TRUE;
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
 
@@ -2320,9 +1955,9 @@ int main() {
             DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, &titleTextColor, sizeof(titleTextColor));
             DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &borderColor, sizeof(borderColor));
         }
-    #endif
+    }
+#endif
 
-    // Carica gli shader
     logger.Log(Logger::Level::Info, Logger::Category::System, "Rilevate informazioni GPU.");
 
     GLuint shader = LoadShader("Shaders/Object.vert", "Shaders/Object.frag");
@@ -2330,18 +1965,14 @@ int main() {
         logger.LogShaderError("Object", "Errore nel caricamento degli shader.");
         return -1;
     }
-    else {
-        logger.LogShaderLoaded("Object");
-    }
+    logger.LogShaderLoaded("Object");
 
     GLuint gridShader = LoadShader("Shaders/Grid.vert", "Shaders/Grid.frag");
     if (gridShader == 0) {
         logger.LogShaderError("Grid", "Errore nel caricamento degli shader.");
         return -1;
     }
-    else {
-        logger.LogShaderLoaded("Grid");
-    }
+    logger.LogShaderLoaded("Grid");
 
     GLuint dirShadowDepthShader = LoadShader("Shaders/DirShadowDepth.vert", "Shaders/DirShadowDepth.frag");
     if (dirShadowDepthShader == 0) {
@@ -2356,31 +1987,24 @@ int main() {
         logger.LogShaderError("PlanarShadowFloor", "Errore nel caricamento degli shader del floor.");
         return -1;
     }
-    else {
-        logger.LogShaderLoaded("PlanarShadowFloor");
-    }
+    logger.LogShaderLoaded("PlanarShadowFloor");
 
-    // Registra i modelli base
     modelManager.registerModel(std::make_shared<CubeModel>());
     modelManager.registerModel(std::make_shared<SphereModel>());
     modelManager.registerModel(std::make_shared<PyramidModel>());
     modelManager.registerModel(std::make_shared<ImagePlaneModel>());
     modelManager.registerModel(std::make_shared<ShadowFloor>());
 
-    // Inizializza i modelli registrati
     modelManager.initializeModels();
     logger.Log(Logger::Level::Info, Logger::Category::Model, "Modelli base registrati e inizializzati.");
 
-    // Inizializza il sistema di picking
     initializePickingSystem();
     logger.Log(Logger::Level::Info, Logger::Category::System, "Sistema di picking inizializzato.");
 
-    // Imposta il modello della griglia
     Grid grid;
     grid.initialize();
     logger.Log(Logger::Level::Info, Logger::Category::Grid, "Griglia inizializzata.");
 
-    // Gizmo luce direzionale
     glm::vec3 lightInitialPos = gDirLight.position;
     auto lightObj = sceneManager.addSystemObject("Sphere", lightInitialPos, gDirLightObjectNumericId, "Directional Light");
     if (lightObj) {
@@ -2404,17 +2028,15 @@ int main() {
 
     {
         glm::vec3 floorPos(0.0f, gFloorHeight, 0.0f);
-        auto floorObj = sceneManager.addSystemObject("ShadowFloor", floorPos, gShadowFloorObjectNumericId, "Shadow Floor");
-        if (floorObj) {
+        auto floorObj2 = sceneManager.addSystemObject("ShadowFloor", floorPos, gShadowFloorObjectNumericId, "Shadow Floor");
+        if (floorObj2) {
             float extent = 50.0f;
             sceneManager.updateObjectScale(gShadowFloorObjectNumericId, glm::vec3(extent, 1.0f, extent));
             logger.Log(Logger::Level::Info, Logger::Category::Grid, "Shadow floor aggiunto.");
         }
     }
 
-    // Render loop
     while (!win.shouldClose()) {
-        // Timer
         static float lastFrame = 0.0f;
         float currentFrame = static_cast<float>(glfwGetTime());
         float deltaTime = currentFrame - lastFrame;
@@ -2428,11 +2050,10 @@ int main() {
         }
 
         glm::mat4x4 lightView = glm::lookAt(gDirLight.position, gDirLight.target, glm::vec3(0.0, 1.0, 0.0));
-        constexpr float orthoSize = 15.0f;
+        constexpr float orthoSize = 20.0f;
         glm::mat4x4 lightProjection = glm::orthoRH_ZO(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.01f, 100.0f);
         gShadowMapData.ViewProjection = lightProjection * lightView;
 
-        // Render shadow map
         {
             static bool isFirstFrame{ true };
 
@@ -2485,7 +2106,7 @@ int main() {
 
                 size_t indexCount = model->getIndices().size();
                 if (indexCount > 0) {
-                    glDrawElements(GL_TRIANGLES, indexCount, GL_UNSIGNED_INT, 0);
+                    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount), GL_UNSIGNED_INT, 0);
                 }
                 else if (!model->getVertices().empty()) {
                     GLsizei m_vertexCount = static_cast<GLsizei>(model->getVertices().size() / 6);
@@ -2498,19 +2119,15 @@ int main() {
             glUseProgram(0);
         }
 
-        // Abilita il test di profondità
         glEnable(GL_DEPTH_TEST);
 
-        // Clear the screen
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glClearColor(0.7f, 0.7f, 0.7f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Input & eventi
         win.processInput();
         win.pollEvents();
 
-        // Framebuffer size / aspect
         int fbw, fbh;
         glfwGetFramebufferSize(win.getGLFWwindow(), &fbw, &fbh);
         if (fbw == 0 || fbh == 0) { glfwWaitEvents(); continue; }
@@ -2522,9 +2139,8 @@ int main() {
             glm::vec3(0.0f, 1.0f, 0.0f)
         );
 
-		updateFiniteLimitState();
+        updateFiniteLimitState();
 
-        // Avvio frame ImGui
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -2535,51 +2151,50 @@ int main() {
         const float SIDEBAR_LEFT_WIDTH = 260.0f;
         const float SIDEBAR_MARGIN = 6.0f;
 
-        // Left sidebar
-        ImGui::SetNextWindowPos(ImVec2(SIDEBAR_MARGIN, SIDEBAR_MARGIN), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(SIDEBAR_LEFT_WIDTH, vh - (SIDEBAR_MARGIN * 2)), ImGuiCond_Always);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 12));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 8));
 
-        ImGuiWindowFlags sidebarFlags =
+        UiWindowConfig leftSidebarCfg{
+            "##LeftSidebar",
+            ImVec2(SIDEBAR_MARGIN, SIDEBAR_MARGIN),
+            ImVec2(SIDEBAR_LEFT_WIDTH, vh - (SIDEBAR_MARGIN * 2)),
+            false,
+            false,
+            true,
             ImGuiWindowFlags_NoTitleBar |
             ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoMove |
             ImGuiWindowFlags_NoCollapse |
             ImGuiWindowFlags_NoBringToFrontOnFocus |
-            ImGuiWindowFlags_NoSavedSettings;
+            ImGuiWindowFlags_NoSavedSettings
+        };
 
-        if (ImGui::Begin("##LeftSidebar", nullptr, sidebarFlags)) {
+        ImGuiWindowFlags leftSidebarFlags = BeginConfiguredWindow(leftSidebarCfg);
 
-            // Grid Mode
+        if (ImGui::Begin(leftSidebarCfg.id, nullptr, leftSidebarFlags)) {
             renderSectionGridMode();
 
             ImGui::Spacing();
             renderSeparator();
             ImGui::Spacing();
 
-            // Scene Objects
             renderSectionSceneObjects();
 
             ImGui::Spacing();
             renderSeparator();
             ImGui::Spacing();
 
-            // Camera
             renderSectionCamera();
 
             ImGui::Spacing();
             renderSeparator();
             ImGui::Spacing();
 
-            // Lighting
             renderSectionLighting();
 
             ImGui::Spacing();
             renderSeparator();
             ImGui::Spacing();
 
-            // Actions
             renderSectionActions();
 
             ImGui::End();
@@ -2587,14 +2202,13 @@ int main() {
 
         ImGui::PopStyleVar(2);
 
-        // Pannello per il modello selezionato
         auto selObjForPanel = sceneManager.getSelectedObject();
         bool lightSelected = selObjForPanel && (selObjForPanel->getId() == gDirLightObjectNumericId);
         bool lightTargetSelected = selObjForPanel && (selObjForPanel->getId() == gDirLightTargetObjectNumericId);
 
         if (showSelectedModelPanel && !lightSelected && !lightTargetSelected) {
-            float detailsWidth = std::clamp(vw * 0.25f, 300.0f, 500.0f);
-            ImVec2 minSize = ImVec2(300, 550);
+            float detailsWidth = std::clamp(vw * 0.25f, 200.0f, 500.0f);
+            ImVec2 minSize = ImVec2(200, 500);
             ImGui::SetNextWindowSizeConstraints(minSize, ImVec2(FLT_MAX, FLT_MAX));
             ImGui::SetNextWindowSize(ImVec2(detailsWidth, 0.0f), ImGuiCond_Always);
 
@@ -2602,19 +2216,16 @@ int main() {
                 auto selectedObj = sceneManager.getSelectedObject();
 
                 if (selectedObj) {
-                    // Aggiungi un selettore per l'operazione di ImGuizmo con bottoni on/off
                     ImGui::Text("Transformation Mode:");
 
-                    // Pulsanti per modalità con stile toggle
                     bool isTranslate = currentGizmoOperation == ImGuizmo::TRANSLATE;
                     bool isRotate = currentGizmoOperation == ImGuizmo::ROTATE;
                     bool isScale = currentGizmoOperation == ImGuizmo::SCALE;
                     bool isUniversal = currentGizmoOperation == ImGuizmo::UNIVERSAL;
+                    (void)isUniversal;
 
-                    // Stile per pulsanti attivi/inattivi
                     ImGui::PushStyleColor(ImGuiCol_Button, isTranslate ? ImVec4(0.6f, 0.6f, 1.0f, 1.0f) : ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
                     if (ImGui::Button("T", ImVec2(30, 30))) {
-                        // Toggle tra TRANSLATE e UNIVERSAL
                         currentGizmoOperation = (isTranslate) ? ImGuizmo::UNIVERSAL : ImGuizmo::TRANSLATE;
                     }
                     ImGui::PopStyleColor();
@@ -2622,7 +2233,6 @@ int main() {
                     ImGui::SameLine();
                     ImGui::PushStyleColor(ImGuiCol_Button, isRotate ? ImVec4(0.6f, 0.6f, 1.0f, 1.0f) : ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
                     if (ImGui::Button("R", ImVec2(30, 30))) {
-                        // Toggle tra ROTATE e UNIVERSAL
                         currentGizmoOperation = (isRotate) ? ImGuizmo::UNIVERSAL : ImGuizmo::ROTATE;
                     }
                     ImGui::PopStyleColor();
@@ -2630,7 +2240,6 @@ int main() {
                     ImGui::SameLine();
                     ImGui::PushStyleColor(ImGuiCol_Button, isScale ? ImVec4(0.6f, 0.6f, 1.0f, 1.0f) : ImVec4(0.2f, 0.2f, 0.25f, 1.0f));
                     if (ImGui::Button("S", ImVec2(30, 30))) {
-                        // Toggle tra SCALE e UNIVERSAL
                         currentGizmoOperation = (isScale) ? ImGuizmo::UNIVERSAL : ImGuizmo::SCALE;
                     }
                     ImGui::PopStyleColor();
@@ -2641,12 +2250,10 @@ int main() {
                     else if (isScale) ImGui::Text("Scale Mode");
                     else ImGui::Text("Universal Mode");
 
-                    // Opzioni di scaling solo se è attiva la modalità scala
                     if (currentGizmoOperation == ImGuizmo::SCALE) {
                         ImGui::Checkbox("Uniform Scaling", &useUniformScaling);
                     }
 
-                    // Opzioni di snap
                     ImGui::Checkbox("Use Snap", &useSnap);
                     if (useSnap) {
                         if (currentGizmoOperation == ImGuizmo::TRANSLATE)
@@ -2659,19 +2266,15 @@ int main() {
 
                     ImGui::Separator();
 
-                    auto selectedObj = sceneManager.getSelectedObject();
                     bool isLight = (selectedObj->getId() == gDirLightObjectNumericId);
 
                     ImGui::Text("Selected: %s", selectedObj->getName().c_str());
                     ImGui::Separator();
 
-                    // Posizione
                     ImGui::Text("Position:");
                     glm::vec3 position = selectedObj->getPosition();
 
                     bool posChanged = false;
-
-                    // Layout input X, Y, Z
                     float columnWidth = ImGui::GetContentRegionAvail().x / 3;
 
                     ImGui::PushItemWidth(columnWidth - 10);
@@ -2697,18 +2300,20 @@ int main() {
                         sceneManager.resetObjectToInitialPosition(selectedObj->getId());
                     }
 
-					// Controllo dei confini se la griglia è finita
                     if (posChanged) {
-                        glm::vec3 clamped = !gInfiniteGrid ? clampToFiniteSpace(position) : position;
+                        glm::vec3 clamped = ClampRenderablePosition(position);
                         if (clamped != position) {
                             gLastMovementClamped = true;
-                            gBoundaryWarningMessage = "Movimento limitato: il modello non puo' uscire dai confini.";
+                            gBoundaryWarningMessage = "Limiti dell'area.";
                             position = clamped;
                         }
                         else {
                             gLastMovementClamped = false;
                         }
                         sceneManager.updateObjectPosition(selectedObj->getId(), position);
+                        if (isLight) {
+                            gDirLight.position = position;
+                        }
                     }
 
                     glm::vec3 clampedPos = !gInfiniteGrid ? clampToFiniteSpace(position) : position;
@@ -2723,7 +2328,6 @@ int main() {
                     sceneManager.updateObjectPosition(selectedObj->getId(), position);
 
                     if (!isLight) {
-                        // Scala
                         ImGui::Separator();
                         ImGui::Text("Scale:");
 
@@ -2772,11 +2376,10 @@ int main() {
                         }
 
                         if (ImGui::Button("Reset Scale", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
-                            scale = glm::vec3(1.0f, 1.0f, 1.0f);
+                            scale = glm::vec3(1.0f);
                             sceneManager.updateObjectScale(selectedObj->getId(), scale);
                         }
 
-                        // Rotazione
                         ImGui::Separator();
                         ImGui::Text("Rotation:");
 
@@ -2818,25 +2421,21 @@ int main() {
                     }
 
                     if (selectedObj) {
-                        // Opzione per fissare il pannello
                         ImGui::Checkbox("Pin Panel", &pinSelectedModelPanel);
 
-                        // Campo per rinominare l'oggetto
                         static char nameBuffer[128] = "";
                         static bool isEditingName = false;
 
                         if (!isEditingName) {
-                            // Mostra nome e pulsante Edit
                             ImGui::Text("Name: %s", selectedObj->getName().c_str());
                             ImGui::SameLine();
                             if (ImGui::Button("Edit")) {
                                 isEditingName = true;
                                 strncpy(nameBuffer, selectedObj->getName().c_str(), sizeof(nameBuffer) - 1);
-                                nameBuffer[sizeof(nameBuffer) - 1] = '\0'; // Assicura terminazione
+                                nameBuffer[sizeof(nameBuffer) - 1] = '\0';
                             }
                         }
                         else {
-                            // Mostra campo di input per modificare il nome
                             ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 60);
                             ImGui::InputText("##name_edit", nameBuffer, sizeof(nameBuffer));
                             ImGui::PopItemWidth();
@@ -2853,13 +2452,12 @@ int main() {
                             }
                         }
                     }
-                    ImGui::Spacing();
 
+                    ImGui::Spacing();
                     ImGui::Separator();
                     ImGui::Text("Appearance:");
 
-                    if (!isLight)
-                    {
+                    if (!isLight) {
                         if (ImGui::Button("Load Texture", ImVec2(ImGui::GetContentRegionAvail().x, 35))) {
                             std::string texturePath;
                             GLuint textureID;
@@ -2886,54 +2484,30 @@ int main() {
                             }
                         }
 
-                        // Pulsante per aprire color picker
                         static bool showColorPicker = false;
+
                         if (ImGui::Button("Choose Color", ImVec2(ImGui::GetContentRegionAvail().x, 35))) {
                             showColorPicker = !showColorPicker;
                         }
+
                         if (showColorPicker) {
                             ImGui::SetNextWindowPos(ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowWidth() - 10,
-                                                           ImGui::GetWindowPos().y + 200), ImGuiCond_FirstUseEver);
+                                ImGui::GetWindowPos().y + 200), ImGuiCond_FirstUseEver);
                             ImGui::SetNextWindowSize(ImVec2(350, 450), ImGuiCond_FirstUseEver);
                             if (ImGui::Begin("Color Picker", &showColorPicker, ImGuiWindowFlags_NoCollapse)) {
                                 static glm::vec4 color = selectedObj->hasOverrideColor()
-                                                         ? selectedObj->getOverrideColor()
-                                                         : glm::vec4(1.0f);
+                                    ? selectedObj->getOverrideColor()
+                                    : glm::vec4(1.0f);
                                 ImGuiColorEditFlags flags = ImGuiColorEditFlags_AlphaBar |
-                                                            ImGuiColorEditFlags_AlphaPreview |
-                                                            ImGuiColorEditFlags_DisplayRGB |
-                                                            ImGuiColorEditFlags_DisplayHSV |
-                                                            ImGuiColorEditFlags_PickerHueWheel;
+                                    ImGuiColorEditFlags_AlphaPreview |
+                                    ImGuiColorEditFlags_DisplayRGB |
+                                    ImGuiColorEditFlags_DisplayHSV |
+                                    ImGuiColorEditFlags_PickerHueWheel;
 
 
                                 if (ImGui::ColorPicker4("##ColorPicker", &color.x, flags)) {
                                     selectedObj->setOverrideColor(color);
                                 }
-
-
-                                ImGui::Separator();
-                                ImGui::Text("Preset Colors:");
-
-                                float buttonSize = 40.0f;
-                                float spacing = 5.0f;
-                                auto preset = [&](const char* id, const ImVec4& c){
-                                    if (ImGui::ColorButton(id, c, 0, ImVec2(buttonSize, buttonSize))) {
-                                        color = glm::vec4(c.x, c.y, c.z, c.w);
-                                        selectedObj->setOverrideColor(color);
-                                    }
-                                };
-                                preset("##Red", ImVec4(1,0,0,1)); ImGui::SameLine(0,spacing);
-                                preset("##Green", ImVec4(0,1,0,1)); ImGui::SameLine(0,spacing);
-                                preset("##Blue", ImVec4(0,0,1,1)); ImGui::SameLine(0,spacing);
-                                preset("##Yellow", ImVec4(1,1,0,1));
-                                preset("##Cyan", ImVec4(0,1,1,1)); ImGui::SameLine(0,spacing);
-                                preset("##Magenta", ImVec4(1,0,1,1)); ImGui::SameLine(0,spacing);
-                                preset("##White", ImVec4(1,1,1,1)); ImGui::SameLine(0,spacing);
-                                preset("##Black", ImVec4(0,0,0,1));
-                                preset("##Orange", ImVec4(1,0.5f,0,1)); ImGui::SameLine(0,spacing);
-                                preset("##Purple", ImVec4(0.5f,0,1,1)); ImGui::SameLine(0,spacing);
-                                preset("##Pink", ImVec4(1,0,0.5f,1)); ImGui::SameLine(0,spacing);
-                                preset("##Gray", ImVec4(0.5f,0.5f,0.5f,1));
 
                                 ImGui::Separator();
                                 if (ImGui::Button("Reset to Default", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
@@ -2942,33 +2516,35 @@ int main() {
                                     color = glm::vec4(1.0f);
                                 }
                                 ImGui::End();
+								if (!showColorPicker) { showColorPicker = false; }
                             }
                         }
 
                         ImGui::Spacing();
 
-                        // Stato Appearance
                         auto modelPtr = selectedObj->getModel();
                         if (selectedObj->hasOverrideTexture()) {
-                            ImGui::TextColored(ImVec4(0.0f,1.0f,0.0f,1.0f), "Custom Texture Active");
+                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Custom Texture Active");
                             ImGui::SameLine();
                             if (ImGui::SmallButton("Remove##Texture")) {
                                 selectedObj->clearOverrideTexture();
                             }
-                        } else if (selectedObj->hasOverrideColor()) {
-                            ImGui::TextColored(ImVec4(0.0f,1.0f,0.0f,1.0f), "Custom Color Active");
+                        }
+                        else if (selectedObj->hasOverrideColor()) {
+                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Custom Color Active");
                             ImGui::SameLine();
                             if (ImGui::SmallButton("Remove##Color")) {
                                 selectedObj->clearOverrideColor();
                             }
-                        } else if (modelPtr->hasTexture()) {
-                            ImGui::TextColored(ImVec4(0.7f,0.7f,1.0f,1.0f), "Model Default Texture");
-                        } else {
-                            ImGui::TextColored(ImVec4(0.7f,0.7f,0.7f,1.0f), "Default Appearance");
+                        }
+                        else if (modelPtr->hasTexture()) {
+                            ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "Model Default Texture");
+                        }
+                        else {
+                            ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "Default Appearance");
                         }
                     }
-                    else
-                    {
+                    else {
                         ImGui::TextDisabled("Directional Light: non supporta texture o colori.");
                     }
 
@@ -2983,7 +2559,8 @@ int main() {
                         ImGui::BeginDisabled();
                         ImGui::Button("Delete Object", ImVec2(ImGui::GetContentRegionAvail().x, 35));
                         ImGui::EndDisabled();
-                    } else {
+                    }
+                    else {
                         if (ImGui::Button("Delete Object", ImVec2(ImGui::GetContentRegionAvail().x, 35))) {
                             showDeleteConfirmation = true;
                             objectToDeleteId = selectedObj->getId();
@@ -3002,7 +2579,6 @@ int main() {
             }
         }
 
-        // Finestra help
         if (shoeHelpWindow) {
             ImGui::SetNextWindowPos(ImVec2(SIDEBAR_WIDTH + 10, 10), ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSize(ImVec2(300, 0), ImGuiCond_FirstUseEver);
@@ -3036,42 +2612,53 @@ int main() {
             }
         }
 
-        // FPS display
-        ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 120, 8), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(110, 0), ImGuiCond_Always);
-        ImGui::Begin("FPS", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize |
-            ImGuiWindowFlags_NoSavedSettings);
-        ImGui::Text("FPS: %.1f", fps);
-        ImGui::End();
+        {
+            UiWindowConfig fpsCfg{
+                "FPS",
+                ImVec2(ImGui::GetIO().DisplaySize.x - 120.0f, 8.0f),
+                ImVec2(110.0f, 0.0f),
+                false,   // center
+                false,   // movable
+                true,    // useAlways: posizione/size ogni frame
+                ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_AlwaysAutoResize |
+                ImGuiWindowFlags_NoSavedSettings
+            };
+            ImGuiWindowFlags fpsFlags = BeginConfiguredWindow(fpsCfg);
+            if (ImGui::Begin(fpsCfg.id, nullptr, fpsFlags)) {
+                ImGui::Text("FPS: %.1f", fps);
+            }
+            ImGui::End();
+        }
 
         {
             const float pad = 8.0f;
             const ImVec2 btnSize(110, 50);
-
-            ImGui::SetNextWindowPos(
+            UiWindowConfig bugCfg{
+                "##BugReportBtn",
                 ImVec2(ImGui::GetIO().DisplaySize.x - btnSize.x - pad,
-                    ImGui::GetIO().DisplaySize.y - btnSize.y - pad),
-                ImGuiCond_Always
-            );
-            ImGui::SetNextWindowSize(btnSize, ImGuiCond_Always);
-
-            ImGuiWindowFlags flags =
+                       ImGui::GetIO().DisplaySize.y - btnSize.y - pad),
+                btnSize,
+                false,  // center
+                false,  // movable
+                true,   // useAlways
                 ImGuiWindowFlags_NoDecoration |
                 ImGuiWindowFlags_NoMove |
                 ImGuiWindowFlags_NoSavedSettings |
                 ImGuiWindowFlags_NoScrollWithMouse |
                 ImGuiWindowFlags_NoScrollbar |
-                ImGuiWindowFlags_NoBackground;
+                ImGuiWindowFlags_NoBackground
+            };
+            ImGuiWindowFlags bugFlags = BeginConfiguredWindow(bugCfg);
 
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-
-            if (ImGui::Begin("##BugReportBtn", nullptr, flags)) {
+            if (ImGui::Begin(bugCfg.id, nullptr, bugFlags)) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.60f, 0.80f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.70f, 0.90f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.50f, 0.70f, 1.0f));
 
-                // Pulsante che occupa TUTTA la finestra
                 if (ImGui::Button("Report Bug", btnSize)) {
                     OpenUrlInBrowser("https://github.com/ilmartotch/BallOfWoolProject/issues/new");
                 }
@@ -3083,7 +2670,6 @@ int main() {
                 }
             }
             ImGui::End();
-
             ImGui::PopStyleVar();
         }
 
@@ -3096,10 +2682,10 @@ int main() {
                 ImGuiWindowFlags_NoSavedSettings)) {
                 float half = gGridHalfSize + gGridBoundaryMargin;
                 ImGui::TextWrapped("Modalita' Finita attiva.\nArea XZ: [-%.2f, %.2f].\nLimite oggetti raggiunto",
-                                   half, half, gFiniteModeMaxObjects);
+                    half, half, gFiniteModeMaxObjects);
                 if (gLastPlacementClamped || gLastMovementClamped) {
                     ImGui::Separator();
-                    ImGui::TextColored(ImVec4(0.95f,0.4f,0.2f,1.0f), "%s", gBoundaryWarningMessage.c_str());
+                    ImGui::TextColored(ImVec4(0.95f, 0.4f, 0.2f, 1.0f), "%s", gBoundaryWarningMessage.c_str());
                 }
                 ImGui::Separator();
                 if (ImGui::Button("Chiudi", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
@@ -3112,7 +2698,6 @@ int main() {
             }
         }
 
-        // Finestra modale di conferma eliminazione
         if (showDeleteConfirmation) {
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -3121,7 +2706,6 @@ int main() {
 
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
 
-            // Usa BeginPopupModal per creare la finestra di conferma
             if (ImGui::BeginPopupModal("Delete Object?", NULL,
                 ImGuiWindowFlags_AlwaysAutoResize |
                 ImGuiWindowFlags_NoSavedSettings)) {
@@ -3131,7 +2715,8 @@ int main() {
 
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
 
-                float buttonWidth = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2) / 3;
+                float buttonWidth = (ImGui::GetContentRegionAvail().x -
+                    ImGui::GetStyle().ItemSpacing.x * 2) / 3;
 
                 if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
                     showDeleteConfirmation = false;
@@ -3145,24 +2730,20 @@ int main() {
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.1f, 0.1f, 1.0f));
 
                 if (ImGui::Button("Delete", ImVec2(buttonWidth, 0))) {
-                    // Procedi con l'eliminazione
                     if (sceneManager.getSelectedObjectId() == objectToDeleteId) {
                         objectSelected = false;
                         showSelectedModelPanel = false;
                         pinSelectedModelPanel = false;
                     }
 
-                    // Effettua l'eliminazione
                     sceneManager.removeObject(objectToDeleteId);
 
-                    // Resetta lo stato e chiudi il popup
                     showDeleteConfirmation = false;
                     ImGui::CloseCurrentPopup();
                 }
 
                 ImGui::PopStyleColor(3);
 
-                // Permette anche la chiusura con Esc
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                     showDeleteConfirmation = false;
                     ImGui::CloseCurrentPopup();
@@ -3174,7 +2755,6 @@ int main() {
             ImGui::PopStyleVar();
         }
 
-        // Console Window
         if (gShowConsole) {
             ImGui::SetNextWindowSize(ImVec2(900, 550), ImGuiCond_FirstUseEver);
             ImGui::SetNextWindowSizeConstraints(ImVec2(600, 400), ImVec2(FLT_MAX, FLT_MAX));
@@ -3186,32 +2766,24 @@ int main() {
             ConsoleWindow::Get().Draw(&gShowConsole);
         }
 
-        // Finestra modale di errore
         if (errorDialog.show) {
-            // Centra la finestra di dialogo
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
-            // Imposta dimensione minima e massima per il dialogo
             ImGui::SetNextWindowSizeConstraints(ImVec2(500, 150), ImVec2(800, 400));
 
-            // Assicurati di aprire il popup PRIMA di BeginPopupModal
             ImGui::OpenPopup(errorDialog.title.c_str());
 
-            // Imposta lo stile della finestra modale
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, 20));
             ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
 
-            // Usa BeginPopupModal per creare la finestra di errore
             if (ImGui::BeginPopupModal(errorDialog.title.c_str(), NULL,
                 ImGuiWindowFlags_AlwaysAutoResize |
                 ImGuiWindowFlags_NoSavedSettings)) {
 
-                // Layout migliorato con wrap del testo
                 ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
 
-                // Icona di errore (simbolo)
                 ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERROR");
                 ImGui::SameLine();
                 ImGui::TextWrapped("%s", errorDialog.message.c_str());
@@ -3226,12 +2798,11 @@ int main() {
                 ImGui::Separator();
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
 
-                // Pulsante OK centrato
-                float buttonWidth = 120.0f;
-                float windowWidth = ImGui::GetContentRegionAvail().x;
-                ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
+                float buttonWidthErr = 120.0f;
+                float windowWidthErr = ImGui::GetContentRegionAvail().x;
+                ImGui::SetCursorPosX((windowWidthErr - buttonWidthErr) * 0.5f);
 
-                if (ImGui::Button("OK", ImVec2(buttonWidth, 30)) ||
+                if (ImGui::Button("OK", ImVec2(buttonWidthErr, 30)) ||
                     ImGui::IsKeyPressed(ImGuiKey_Enter) ||
                     ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                     errorDialog.show = false;
@@ -3247,12 +2818,10 @@ int main() {
             ImGui::PopStyleVar();
         }
 
-        // Finestra di conferma sostituzione texture
         if (textureReplaceDialog.show) {
             ImVec2 center = ImGui::GetMainViewport()->GetCenter();
             ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
 
-            // Imposta dimensione adeguata per il contenuto
             ImGui::SetNextWindowSizeConstraints(ImVec2(600, 200), ImVec2(900, 400));
 
             ImGui::OpenPopup("Replace Texture?");
@@ -3292,25 +2861,22 @@ int main() {
 
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 5);
 
-                // Layout pulsanti migliorato
                 float totalWidth = ImGui::GetContentRegionAvail().x;
-                float buttonWidth = (totalWidth - 10) / 3; // 3 pulsanti con spacing
+                float buttonWidth = (totalWidth - 10) / 3;
 
-                // Pulsante "Don't Replace"
                 if (ImGui::Button("Don't Replace", ImVec2(buttonWidth, 35))) {
                     if (textureReplaceDialog.newTextureID != 0) {
                         glDeleteTextures(1, &textureReplaceDialog.newTextureID);
                     }
 
                     textureReplaceDialog.show = false;
-                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.texturePath.clear();
                     textureReplaceDialog.newTextureID = 0;
                     ImGui::CloseCurrentPopup();
                 }
 
                 ImGui::SameLine();
 
-                // Pulsante "Don't Ask Again"
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.0f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.5f, 0.1f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.3f, 0.0f, 1.0f));
@@ -3320,7 +2886,7 @@ int main() {
                     ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
 
                     textureReplaceDialog.show = false;
-                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.texturePath.clear();
                     textureReplaceDialog.newTextureID = 0;
                     ImGui::CloseCurrentPopup();
                 }
@@ -3329,7 +2895,6 @@ int main() {
 
                 ImGui::SameLine();
 
-                // Pulsante "Yes, Replace"
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.8f, 0.4f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.2f, 1.0f));
@@ -3338,7 +2903,7 @@ int main() {
                     ModelLoader::applyTextureToSelected(sceneManager, textureReplaceDialog.newTextureID);
 
                     textureReplaceDialog.show = false;
-                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.texturePath.clear();
                     textureReplaceDialog.newTextureID = 0;
                     ImGui::CloseCurrentPopup();
                 }
@@ -3351,7 +2916,7 @@ int main() {
                     }
 
                     textureReplaceDialog.show = false;
-                    textureReplaceDialog.texturePath = "";
+                    textureReplaceDialog.texturePath.clear();
                     textureReplaceDialog.newTextureID = 0;
                     ImGui::CloseCurrentPopup();
                 }
@@ -3361,7 +2926,6 @@ int main() {
             ImGui::PopStyleVar();
         }
 
-        // Aggiorna Shadow System (matrici luce dinamiche)
         glm::vec3 lightDir;
         if (gDirLight.useTarget) {
             lightDir = glm::normalize(gDirLight.target - gDirLight.position);
@@ -3378,14 +2942,10 @@ int main() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glViewport(0, 0, fbw, fbh);
         glEnable(GL_DEPTH_TEST);
-        
-        // Scene
-        renderScene(shader, view, projection);
 
-        // Floor
+        renderScene(shader, view, projection);
         renderShadowFloor(view, projection);
-        
-        // Griglia
+
         grid.render(gridShader, projection, view, mouseControl.camPos,
             gInfiniteGrid, gGridHalfSize,
             GRID_COLOR, GRID_X_AXIS_COLOR, GRID_Z_AXIS_COLOR);
@@ -3395,23 +2955,60 @@ int main() {
             renderImGuizmo(view, projection);
         }
 
-        renderLoadingDialog();
         renderExportFormatDialog();
         renderFiniteLimitDialog();
         renderGridModeSwitchErrorDialog();
+
+        if (successDialog.show) {
+            ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+            ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowSizeConstraints(ImVec2(500, 150), ImVec2(800, 400));
+
+            ImGui::OpenPopup(successDialog.title.c_str());
+
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, 20));
+            ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
+
+            if (ImGui::BeginPopupModal(successDialog.title.c_str(), &successDialog.show,
+                ImGuiWindowFlags_NoResize)) {
+
+                ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
+                ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "SUCCESS");
+                ImGui::SameLine();
+                ImGui::TextWrapped("%s", successDialog.message.c_str());
+
+                if (!successDialog.details.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextWrapped("%s", successDialog.details.c_str());
+                }
+                ImGui::PopTextWrapPos();
+                ImGui::Separator();
+                float buttonWidth = 120.0f;
+                float windowWidth = ImGui::GetContentRegionAvail().x;
+                ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
+                if (ImGui::Button("OK", ImVec2(buttonWidth, 30)) ||
+                    ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+                    ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                    successDialog.reset();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar();
+        }
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         win.swapBuffers();
     }
 
-    // Pulisci le risorse
     modelManager.cleanup();
     pickingBuffer.cleanup();
     grid.cleanup();
     gShadows.shutdown();
 
-    // Chiudi ImGui
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -3420,13 +3017,13 @@ int main() {
     glDeleteProgram(gridShader);
     glDeleteProgram(pickingShader);
     glDeleteProgram(dirShadowDepthShader);
-	glDeleteProgram(gPlanarFloorShader);
+    glDeleteProgram(gPlanarFloorShader);
 
     glfwTerminate();
     return 0;
 }
 
-// Renderizza ImGuizmo per il modello selezionato
+// ImGuizmo
 void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
     auto selectedObj = sceneManager.getSelectedObject();
     if (!selectedObj || !objectSelected) return;
@@ -3438,7 +3035,7 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
     ImGuizmo::BeginFrame();
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-    ImGuizmo::SetRect(0, 0, (float)gFramebufferWidth, (float)gFramebufferHeight);
+    ImGuizmo::SetRect(0, 0, static_cast<float>(gFramebufferWidth), static_cast<float>(gFramebufferHeight));
 
     glm::mat4 modelMatrix = selectedObj->getModelMatrix();
     const bool isLight = (selectedObj->getId() == gDirLightObjectNumericId);
@@ -3458,7 +3055,6 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
     );
 
     if (ImGuizmo::IsUsing()) {
-        // Decomponi la matrice trasformata
         glm::vec3 position, eulerDeg, scale;
         ImGuizmo::DecomposeMatrixToComponents(
             glm::value_ptr(modelMatrix),
@@ -3468,28 +3064,23 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
         );
 
         if (isLight) {
-            // Vincoli luce
-            if (position.y < 0.0f) position.y = 0.0f;
-            position = clampToFiniteSpace(position);
+            position = ClampRenderablePosition(position);
             sceneManager.updateObjectPosition(selectedObj->getId(), position);
             gDirLight.position = position;
         }
         else if (isLightTarget) {
-            // Target sempre sul piano XZ, rotazione forzata flat
             position = ClampTargetOnFloor(position);
             sceneManager.updateObjectPosition(selectedObj->getId(), position);
-
-            glm::quat flatRot = glm::quat(glm::radians(glm::vec3(-90.0f, 0.0f, 0.0f)));
-            sceneManager.updateObjectRotation(selectedObj->getId(), flatRot);
-
+            if (auto obj = sceneManager.getObjectById(gDirLightTargetObjectNumericId)) {
+                obj->setPosition(position);
+            }
             gDirLight.target = position;
         }
         else {
-            if (position.y < 0.0f) position.y = 0.0f;
-            position = clampToFiniteSpace(position);
+            position = ClampRenderablePosition(position);
             sceneManager.updateObjectPosition(selectedObj->getId(), position);
 
-            displayedEulerAngles = eulerDeg; // sincronizza UI con gizmo
+            displayedEulerAngles = eulerDeg;
             glm::quat rotation = glm::quat(glm::radians(displayedEulerAngles));
             sceneManager.updateObjectRotation(selectedObj->getId(), rotation);
 
@@ -3497,10 +3088,8 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
         }
     }
 
-    // Mantieni vincoli post-manipolazione
     if (auto lightObj = findObjectById(gDirLightObjectNumericId)) {
-        glm::vec3 lp = clampToFiniteSpace(lightObj->getPosition());
-        if (lp.y < 0.0f) lp.y = 0.0f;
+        glm::vec3 lp = ClampRenderablePosition(lightObj->getPosition());
         if (lp != lightObj->getPosition()) {
             sceneManager.updateObjectPosition(gDirLightObjectNumericId, lp);
         }
@@ -3515,209 +3104,7 @@ void renderImGuizmo(const glm::mat4& view, const glm::mat4& projection) {
     }
 }
 
-// Renderizza il dialog di caricamento
-void renderLoadingDialog() {
-    if (!loadingDialog.show) return;
-    
-    // Aggiorna animazione spinner
-    loadingDialog.spinnerAngle += ImGui::GetIO().DeltaTime * 360.0f;
-    if (loadingDialog.spinnerAngle > 360.0f) {
-        loadingDialog.spinnerAngle -= 360.0f;
-    }
-    
-    // Centra il dialog
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(500, 0), ImGuiCond_Always);
-    
-    // Styling
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20, 20));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
-    
-    // Colore titolo in base allo stato
-    if (loadingDialog.hasError) {
-        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-    } else if (loadingDialog.isComplete) {
-        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
-    } else {
-        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.6f, 0.9f, 1.0f));
-    }
-    
-    // Dialog non chiudibile durante il caricamento
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | 
-                             ImGuiWindowFlags_NoMove | 
-                             ImGuiWindowFlags_NoCollapse;
-    
-    if (!loadingDialog.isComplete && !loadingDialog.hasError) {
-        flags |= ImGuiWindowFlags_NoSavedSettings;
-    }
-    
-    bool dialogOpen = true;
-    if (ImGui::Begin("Loading Model", &dialogOpen, flags)) {
-        
-        // Nome file
-        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "File:");
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s", std::filesystem::path(loadingDialog.fileName).filename().string().c_str());
-        
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        
-        if (loadingDialog.hasError) {
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "ERROR");
-            ImGui::Spacing();
-            ImGui::TextWrapped("%s", loadingDialog.errorMessage.c_str());
-            
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-            
-            float buttonWidth = 120.0f;
-            float windowWidth = ImGui::GetContentRegionAvail().x;
-            ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
-
-            if (ImGui::Button("Close", ImVec2(buttonWidth, 30))) {
-                loadingDialog.reset();
-            }
-            
-        } else if (loadingDialog.isComplete) {
-            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Loading Complete!");
-            
-            ImGui::Spacing();
-            ImGui::Text("Loaded in %.2f seconds", loadingDialog.elapsedTime);
-            
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-            
-            float buttonWidth = 120.0f;
-            float windowWidth = ImGui::GetContentRegionAvail().x;
-            ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
-            
-            if (ImGui::Button("OK", ImVec2(buttonWidth, 30))) {
-                loadingDialog.reset();
-            }
-            
-        } else {
-            // Spinner animato
-            ImDrawList* draw_list = ImGui::GetWindowDrawList();
-            ImVec2 cursorPos = ImGui::GetCursorScreenPos();
-            ImVec2 spinnerCenter = ImVec2(
-                cursorPos.x + ImGui::GetContentRegionAvail().x * 0.5f,
-                cursorPos.y + 40
-            );
-            
-            float radius = 20.0f;
-            int segments = 12;
-            float thickness = 3.0f;
-            
-            // Disegna cerchio background
-            draw_list->AddCircle(spinnerCenter, radius, 
-                                ImColor(0.4f, 0.4f, 0.4f, 0.3f), segments, thickness);
-            
-            // Disegna arco animato
-            float angle_rad = glm::radians(loadingDialog.spinnerAngle);
-            constexpr float arc_length = glm::radians(270.0f); // 3/4 di cerchio
-            
-            ImVec2 arc_start = ImVec2(
-                spinnerCenter.x + radius * cosf(angle_rad),
-                spinnerCenter.y + radius * sinf(angle_rad)
-            );
-            
-            draw_list->PathArcTo(spinnerCenter, radius, angle_rad, 
-                               angle_rad + arc_length, segments);
-            draw_list->PathStroke(ImColor(0.2f, 0.6f, 1.0f, 1.0f), 0, thickness);
-            
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 80);
-            
-            // Status message
-            ImGui::TextWrapped("%s", loadingDialog.statusMessage.c_str());
-            
-            ImGui::Spacing();
-            
-            // Progress bar
-            char progressLabel[32];
-            snprintf(progressLabel, sizeof(progressLabel), "%.0f%%", loadingDialog.progress * 100.0f);
-            
-            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.2f, 0.6f, 1.0f, 1.0f));
-            ImGui::ProgressBar(loadingDialog.progress, ImVec2(-1, 30), progressLabel);
-            ImGui::PopStyleColor();
-            
-            ImGui::Spacing();
-            
-            // Elapsed time
-            ImGui::Text("Elapsed: %.1f s", loadingDialog.elapsedTime);
-            
-            // Pulsante Cancel (opzionale)
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-            
-            float buttonWidth = 100.0f;
-            float windowWidth = ImGui::GetContentRegionAvail().x;
-            ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
-            
-            if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
-                loadingDialog.error("Loading cancelled by user");
-            }
-        }
-        ImGui::End();
-    }
-    if (!dialogOpen && (loadingDialog.isComplete || loadingDialog.hasError)) {
-        loadingDialog.reset();
-    }
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar(2);
-}
-
-void renderSuccessDialog() {
-    if (!successDialog.show) return;
-
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSizeConstraints(ImVec2(500, 150), ImVec2(800, 400));
-
-    ImGui::OpenPopup(successDialog.title.c_str());
-
-    // Stile VERDE per successo
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(25, 20));
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.8f, 0.3f, 1.0f));
-
-    if (ImGui::BeginPopupModal(successDialog.title.c_str(), &successDialog.show,
-        ImGuiWindowFlags_NoResize)) {
-
-        ImGui::PushTextWrapPos(ImGui::GetContentRegionAvail().x - 10);
-        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "SUCCESS");
-        ImGui::SameLine();
-        ImGui::TextWrapped("%s", successDialog.message.c_str());
-
-        if (!successDialog.details.empty()) {
-            ImGui::Separator();
-            ImGui::TextWrapped("%s", successDialog.details.c_str());
-        }
-        ImGui::PopTextWrapPos();
-        ImGui::Separator();
-        float buttonWidth = 120.0f;
-        float windowWidth = ImGui::GetContentRegionAvail().x;
-        ImGui::SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
-        if (ImGui::Button("OK", ImVec2(buttonWidth,30)) ||
-            ImGui::IsKeyPressed(ImGuiKey_Enter) ||
-            ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-            successDialog.reset();
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
-    ImGui::PopStyleColor(2);
-    ImGui::PopStyleVar();
-}
-
-// Mostra informazioni dettagliate sull'oggetto selezionato
+// Dettagli oggetto (facoltativo, lasciato intatto)
 void showObjectDetailsPanel(unsigned int objectId) {
     auto obj = findObjectById(objectId);
     if (!obj) return;
@@ -3731,7 +3118,6 @@ void showObjectDetailsPanel(unsigned int objectId) {
     ImGui::Text("Object Name: %s", obj->getName().c_str());
     ImGui::Separator();
 
-    // Mostra posizione, rotazione, scala con set di controlli
     glm::vec3 position = obj->getPosition();
     glm::quat rotation = obj->getRotation();
     glm::vec3 scale = obj->getScale();
@@ -3744,7 +3130,6 @@ void showObjectDetailsPanel(unsigned int objectId) {
     ImGui::InputFloat3("##scale", glm::value_ptr(scale));
 
     if (ImGui::Button("Apply Changes")) {
-        // Applica le modifiche solo se ci sono cambiamenti reali
         bool changed = false;
         changed |= (position != obj->getPosition());
         changed |= (rotation != obj->getRotation());
@@ -3760,11 +3145,11 @@ void showObjectDetailsPanel(unsigned int objectId) {
     ImGui::End();
 }
 
+// Stile
 void ApplayModernRoundedStyle() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
 
-    // Corner rounding 8px
     style.WindowRounding = 8.0f;
     style.ChildRounding = 8.0f;
     style.FrameRounding = 8.0f;
@@ -3773,7 +3158,6 @@ void ApplayModernRoundedStyle() {
     style.GrabRounding = 8.0f;
     style.TabRounding = 8.0f;
 
-	// Padding and spacing
     style.WindowPadding = ImVec2(16, 16);
     style.FramePadding = ImVec2(12, 8);
     style.ItemSpacing = ImVec2(12, 8);
@@ -3782,73 +3166,59 @@ void ApplayModernRoundedStyle() {
     style.ScrollbarSize = 14.0f;
     style.GrabMinSize = 12.0f;
 
-    // Borders
     style.WindowBorderSize = 1.0f;
     style.ChildBorderSize = 1.0f;
     style.PopupBorderSize = 1.0f;
     style.FrameBorderSize = 0.0f;
     style.TabBorderSize = 0.0f;
 
-    // Ui pannel - grigio scuro
-    colors[ImGuiCol_ChildBg] = ImVec4(0.235f, 0.235f, 0.255f, 1.0f); // rgb(60, 60, 65)
+    colors[ImGuiCol_ChildBg] = ImVec4(0.235f, 0.235f, 0.255f, 1.0f);
 
-	// Top bar - griuo scuro
-    colors[ImGuiCol_TitleBg] = ImVec4(0.176f, 0.176f, 0.196f, 1.0f); // rgb(45, 45, 50)
+    colors[ImGuiCol_TitleBg] = ImVec4(0.176f, 0.176f, 0.196f, 1.0f);
     colors[ImGuiCol_TitleBgActive] = ImVec4(0.176f, 0.176f, 0.196f, 1.0f);
     colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.176f, 0.176f, 0.196f, 1.0f);
 
-    // Button - viola pastello
-    colors[ImGuiCol_Button] = ImVec4(0.627f, 0.549f, 0.784f, 0.40f); // rgba(160, 140, 200, 0.4)
+    colors[ImGuiCol_Button] = ImVec4(0.627f, 0.549f, 0.784f, 0.40f);
     colors[ImGuiCol_ButtonHovered] = ImVec4(0.627f, 0.549f, 0.784f, 0.70f);
     colors[ImGuiCol_ButtonActive] = ImVec4(0.627f, 0.549f, 0.784f, 1.00f);
 
-    // Borders - grigio tonalità media
-    colors[ImGuiCol_Border] = ImVec4(0.314f, 0.314f, 0.333f, 0.50f); // rgba(80, 80, 85, 0.5)
+    colors[ImGuiCol_Border] = ImVec4(0.314f, 0.314f, 0.333f, 0.50f);
     colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-    // Text
-    colors[ImGuiCol_Text] = ImVec4(0.902f, 0.902f, 0.902f, 1.0f); // rgb(230, 230, 230)
-    colors[ImGuiCol_TextDisabled] = ImVec4(0.627f, 0.627f, 0.647f, 1.0f); // rgb(160, 160, 165)
+    colors[ImGuiCol_Text] = ImVec4(0.902f, 0.902f, 0.902f, 1.0f);
+    colors[ImGuiCol_TextDisabled] = ImVec4(0.627f, 0.627f, 0.647f, 1.0f);
     colors[ImGuiCol_TextSelectedBg] = ImVec4(0.627f, 0.549f, 0.784f, 0.35f);
 
-    // header/collapsing bar
     colors[ImGuiCol_Header] = ImVec4(0.627f, 0.549f, 0.784f, 0.31f);
     colors[ImGuiCol_HeaderHovered] = ImVec4(0.627f, 0.549f, 0.784f, 0.50f);
     colors[ImGuiCol_HeaderActive] = ImVec4(0.627f, 0.549f, 0.784f, 0.70f);
 
-    // Scrollbar
     colors[ImGuiCol_ScrollbarBg] = ImVec4(0.098f, 0.098f, 0.118f, 0.53f);
     colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.314f, 0.314f, 0.333f, 1.0f);
     colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.392f, 0.392f, 0.412f, 1.0f);
     colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.510f, 0.510f, 0.529f, 1.0f);
 
-	// Checkbox
     colors[ImGuiCol_CheckMark] = ImVec4(0.627f, 0.549f, 0.784f, 1.0f);
     colors[ImGuiCol_FrameBg] = ImVec4(0.176f, 0.176f, 0.196f, 0.54f);
     colors[ImGuiCol_FrameBgHovered] = ImVec4(0.627f, 0.549f, 0.784f, 0.40f);
     colors[ImGuiCol_FrameBgActive] = ImVec4(0.627f, 0.549f, 0.784f, 0.67f);
 
-    // Slider
     colors[ImGuiCol_SliderGrab] = ImVec4(0.627f, 0.549f, 0.784f, 1.0f);
     colors[ImGuiCol_SliderGrabActive] = ImVec4(0.706f, 0.627f, 0.863f, 1.0f);
 
-    // Tab
     colors[ImGuiCol_Tab] = ImVec4(0.235f, 0.235f, 0.255f, 0.86f);
     colors[ImGuiCol_TabHovered] = ImVec4(0.627f, 0.549f, 0.784f, 0.80f);
     colors[ImGuiCol_TabActive] = ImVec4(0.549f, 0.471f, 0.706f, 1.0f);
     colors[ImGuiCol_TabUnfocused] = ImVec4(0.176f, 0.176f, 0.196f, 0.97f);
     colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.314f, 0.314f, 0.333f, 1.0f);
 
-	// Window background
     colors[ImGuiCol_WindowBg] = ImVec4(0.176f, 0.176f, 0.196f, 0.94f);
     colors[ImGuiCol_PopupBg] = ImVec4(0.118f, 0.118f, 0.137f, 0.94f);
 
-    // Resize grip
     colors[ImGuiCol_ResizeGrip] = ImVec4(0.627f, 0.549f, 0.784f, 0.25f);
     colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.627f, 0.549f, 0.784f, 0.67f);
     colors[ImGuiCol_ResizeGripActive] = ImVec4(0.627f, 0.549f, 0.784f, 0.95f);
 
-    // Separator
     colors[ImGuiCol_Separator] = ImVec4(0.314f, 0.314f, 0.333f, 0.50f);
     colors[ImGuiCol_SeparatorHovered] = ImVec4(0.392f, 0.392f, 0.412f, 0.78f);
     colors[ImGuiCol_SeparatorActive] = ImVec4(0.510f, 0.510f, 0.529f, 1.0f);

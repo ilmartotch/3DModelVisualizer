@@ -157,3 +157,19 @@ std::vector<std::string> ModelManager::getSupportedModelFormats() {
 std::vector<std::string> ModelManager::getSupportedImageFormats() {
     return {".jpg", ".jpeg", ".png", ".bmp", ".tga"};
 }
+
+/*
+ModelManager is a registry for all Model instances used in the scene.
+
+Responsibilities:
+- Register and initialize models including built-in primitives and imports
+- Load models from disk via ModelLoader
+- Generate unique names to avoid collisions when importing
+- Provide model lookup by name for SceneManager
+
+Models are stored as shared_ptr to allow multiple SceneObjects to reference
+the same Model data, for example multiple cubes sharing one CubeModel.
+
+Built-in models like Cube, Sphere and Pyramid are registered at startup.
+Supported import formats are determined by Assimp library capabilities.
+*/

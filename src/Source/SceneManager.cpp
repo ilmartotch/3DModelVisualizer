@@ -413,3 +413,27 @@ std::shared_ptr<SceneObject> SceneManager::addSystemObject(
     }
     return obj;
 }
+
+/*
+SceneManager is the central coordinator for all objects in the 3D scene.
+
+Responsibilities:
+- Maintain list of SceneObjects with unique IDs
+- Handle selection state with single selection model
+- Render all objects with proper transforms and materials
+- Render objects for GPU picking using color-coded IDs
+- Find valid spawn positions avoiding collisions
+
+User objects start from ID 1 and increment. System objects like the light
+and shadow floor use fixed IDs in the 0x00FFFF** range. IDs are encoded
+as RGB colors for GPU picking.
+
+Spawn position algorithm first tries camera target projected onto floor.
+If occupied, searches in expanding spiral pattern. In finite mode,
+positions are clamped to grid bounds.
+
+Rendering passes:
+- renderAll for main scene pass with lighting and materials
+- renderForPicking for flat color pass for object selection
+- renderForDepth for shadow map depth pass
+*/

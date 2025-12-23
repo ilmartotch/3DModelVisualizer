@@ -1,10 +1,8 @@
 #include "../Include/ImagePlaneModel.h"
-#include <iostream>
 #include <glm/glm.hpp>
 
 ImagePlaneModel::ImagePlaneModel(const std::string& name) 
     : Model(name) {
-    std::cout << "ImagePlaneModel creato: " << name << std::endl;
 }
 
 ImagePlaneModel::~ImagePlaneModel() {
@@ -20,9 +18,6 @@ void ImagePlaneModel::setImageDimensions(int width, int height) {
     } else {
         aspectRatio = 1.0f;
     }
-    
-    std::cout << "ImagePlane dimensions set: " << width << "x" << height 
-              << " (aspect: " << aspectRatio << ")" << std::endl;
 }
 
 void ImagePlaneModel::generateQuadGeometry() {
@@ -84,30 +79,23 @@ void ImagePlaneModel::generateQuadGeometry() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
     
     glBindVertexArray(0);
-    
-    std::cout << "Quad geometry generated: " << quadWidth << "x" << quadHeight << std::endl;
 }
 
 void ImagePlaneModel::initialize() {
     if (m_initialized) {
-        std::cout << "ImagePlaneModel già inizializzato: " << getName() << std::endl;
         return;
     }
 
     if (imageWidth == 0 || imageHeight == 0) {
         setImageDimensions(512, 512);
-        std::cout << "Usando dimensioni default per " << getName() << std::endl;
     }
     
     generateQuadGeometry();
     m_initialized = true;
-    
-    std::cout << "ImagePlaneModel inizializzato: " << getName() << std::endl;
 }
 
 void ImagePlaneModel::render() {
     if (!m_initialized) {
-        std::cerr << "ImagePlaneModel non inizializzato: " << getName() << std::endl;
         return;
     }
     
@@ -143,7 +131,6 @@ void ImagePlaneModel::cleanup() {
     }
     
     m_initialized = false;
-    std::cout << "ImagePlaneModel cleanup completato: " << getName() << std::endl;
 }
 
 std::shared_ptr<Model> ImagePlaneModel::clone() const {

@@ -1,4 +1,4 @@
-#include "../Include/Logger.h"
+                    #include "../Include/Logger.h"
 #include <cstdio>
 #include <cstdarg>
 #include <sstream>
@@ -129,16 +129,16 @@ void Logger::LogModelAdded(std::string_view modelName, unsigned int id,
     size_t vertexCount, size_t indexCount, bool hasTexture)
 {
     Logf(Level::Info, Category::Model,
-        "Modello aggiunto: '%.*s' (ID: %u) | Vertici: %zu | Indici: %zu | Texture: %s",
+        "Model added: '%.*s' (ID: %u) | Vertices: %zu | Indices: %zu | Texture: %s",
         static_cast<int>(modelName.size()), modelName.data(),
-        id, vertexCount, indexCount, hasTexture ? "Si" : "No");
+        id, vertexCount, indexCount, hasTexture ? "Yes" : "No");
 }
 
 void Logger::LogModelLoaded(std::string_view path, size_t meshCount,
     size_t totalVertices, size_t totalIndices, float loadTimeSec)
 {
     Logf(Level::Info, Category::Model,
-        "Modello caricato: '%.*s' | Mesh: %zu | Vertici: %zu | Indici: %zu | Tempo: %.2fs",
+        "Model loaded: '%.*s' | Meshes: %zu | Vertices: %zu | Indices: %zu | Time: %.2fs",
         static_cast<int>(path.size()), path.data(),
         meshCount, totalVertices, totalIndices, loadTimeSec);
 }
@@ -146,7 +146,7 @@ void Logger::LogModelLoaded(std::string_view path, size_t meshCount,
 void Logger::LogModelLoadError(std::string_view path, std::string_view error)
 {
     Logf(Level::Error, Category::Model,
-        "Errore caricamento modello '%.*s': %.*s",
+        "Model load error '%.*s': %.*s",
         static_cast<int>(path.size()), path.data(),
         static_cast<int>(error.size()), error.data());
 }
@@ -154,7 +154,7 @@ void Logger::LogModelLoadError(std::string_view path, std::string_view error)
 void Logger::LogModelRemoved(std::string_view modelName, unsigned int id)
 {
     Logf(Level::Info, Category::Model,
-        "Modello rimosso: '%.*s' (ID: %u)",
+        "Model removed: '%.*s' (ID: %u)",
         static_cast<int>(modelName.size()), modelName.data(), id);
 }
 
@@ -162,7 +162,7 @@ void Logger::LogTextureLoaded(std::string_view path, unsigned int glId,
     int width, int height, int channels)
 {
     Logf(Level::Info, Category::Texture,
-        "Texture caricata: '%.*s' | GL ID: %u | %dx%d | Canali: %d",
+        "Texture loaded: '%.*s' | GL ID: %u | %dx%d | Channels: %d",
         static_cast<int>(path.size()), path.data(),
         glId, width, height, channels);
 }
@@ -170,7 +170,7 @@ void Logger::LogTextureLoaded(std::string_view path, unsigned int glId,
 void Logger::LogTextureLoadError(std::string_view path, std::string_view error)
 {
     Logf(Level::Error, Category::Texture,
-        "Errore caricamento texture '%.*s': %.*s",
+        "Texture load error '%.*s': %.*s",
         static_cast<int>(path.size()), path.data(),
         static_cast<int>(error.size()), error.data());
 }
@@ -179,7 +179,7 @@ void Logger::LogTextureApplied(std::string_view objectName, unsigned int objectI
     unsigned int textureId)
 {
     Logf(Level::Info, Category::Texture,
-        "Texture applicata a '%.*s' (ID: %u) | Texture GL ID: %u",
+        "Texture applied to '%.*s' (ID: %u) | Texture GL ID: %u",
         static_cast<int>(objectName.size()), objectName.data(),
         objectId, textureId);
 }
@@ -188,7 +188,7 @@ void Logger::LogTextureReplaced(std::string_view objectName, unsigned int object
     unsigned int oldTextureId, unsigned int newTextureId)
 {
     Logf(Level::Info, Category::Texture,
-        "Texture sostituita su '%.*s' (ID: %u) | Vecchia: %u -> Nuova: %u",
+        "Texture replaced on '%.*s' (ID: %u) | Old: %u -> New: %u",
         static_cast<int>(objectName.size()), objectName.data(),
         objectId, oldTextureId, newTextureId);
 }
@@ -196,40 +196,40 @@ void Logger::LogTextureReplaced(std::string_view objectName, unsigned int object
 void Logger::LogTextureRemoved(std::string_view objectName, unsigned int objectId)
 {
     Logf(Level::Info, Category::Texture,
-        "Texture rimossa da '%.*s' (ID: %u)",
+        "Texture removed from '%.*s' (ID: %u)",
         static_cast<int>(objectName.size()), objectName.data(), objectId);
 }
 
 void Logger::LogObjectAdded(std::string_view name, unsigned int id)
 {
     Logf(Level::Info, Category::Scene,
-        "Oggetto aggiunto alla scena: '%.*s' (ID: %u)",
+        "Object added to scene: '%.*s' (ID: %u)",
         static_cast<int>(name.size()), name.data(), id);
 }
 
 void Logger::LogObjectRemoved(std::string_view name, unsigned int id)
 {
     Logf(Level::Info, Category::Scene,
-        "Oggetto rimosso dalla scena: '%.*s' (ID: %u)",
+        "Object removed from scene: '%.*s' (ID: %u)",
         static_cast<int>(name.size()), name.data(), id);
 }
 
 void Logger::LogObjectSelected(std::string_view name, unsigned int id)
 {
     Logf(Level::Trace, Category::Scene,
-        "Oggetto selezionato: '%.*s' (ID: %u)",
+        "Object selected: '%.*s' (ID: %u)",
         static_cast<int>(name.size()), name.data(), id);
 }
 
 void Logger::LogObjectDeselected()
 {
-    Log(Level::Trace, Category::Scene, "Selezione rimossa");
+    Log(Level::Trace, Category::Scene, "Selection cleared");
 }
 
 void Logger::LogObjectRenamed(std::string_view oldName, std::string_view newName, unsigned int id)
 {
     Logf(Level::Info, Category::Scene,
-        "Oggetto rinominato: '%.*s' -> '%.*s' (ID: %u)",
+        "Object renamed: '%.*s' -> '%.*s' (ID: %u)",
         static_cast<int>(oldName.size()), oldName.data(),
         static_cast<int>(newName.size()), newName.data(), id);
 }
@@ -237,13 +237,13 @@ void Logger::LogObjectRenamed(std::string_view oldName, std::string_view newName
 void Logger::LogGridModeChanged(bool infinite)
 {
     Logf(Level::Info, Category::Grid,
-        "Modalita' griglia cambiata: %s", infinite ? "Infinita" : "Finita");
+        "Grid mode changed: %s", infinite ? "Infinite" : "Finite");
 }
 
 void Logger::LogLightingChanged(std::string_view parameter, std::string_view value)
 {
     Logf(Level::Trace, Category::Light,
-        "Parametro luce modificato: %.*s = %.*s",
+        "Light parameter changed: %.*s = %.*s",
         static_cast<int>(parameter.size()), parameter.data(),
         static_cast<int>(value.size()), value.data());
 }
@@ -251,21 +251,21 @@ void Logger::LogLightingChanged(std::string_view parameter, std::string_view val
 void Logger::LogRenderModeChanged(std::string_view mode)
 {
     Logf(Level::Info, Category::Render,
-        "Modalita' rendering cambiata: %.*s",
+        "Render mode changed: %.*s",
         static_cast<int>(mode.size()), mode.data());
 }
 
 void Logger::LogShaderLoaded(std::string_view shaderName)
 {
     Logf(Level::Info, Category::Shader,
-        "Shader caricato: '%.*s'",
+        "Shader loaded: '%.*s'",
         static_cast<int>(shaderName.size()), shaderName.data());
 }
 
 void Logger::LogShaderError(std::string_view shaderName, std::string_view error)
 {
     Logf(Level::Error, Category::Shader,
-        "Errore shader '%.*s': %.*s",
+        "Shader error '%.*s': %.*s",
         static_cast<int>(shaderName.size()), shaderName.data(),
         static_cast<int>(error.size()), error.data());
 }
@@ -273,7 +273,7 @@ void Logger::LogShaderError(std::string_view shaderName, std::string_view error)
 void Logger::LogExportStarted(std::string_view format, std::string_view path)
 {
     Logf(Level::Info, Category::Export,
-        "Export avviato | Formato: %.*s | Path: %.*s",
+        "Export started | Format: %.*s | Path: %.*s",
         static_cast<int>(format.size()), format.data(),
         static_cast<int>(path.size()), path.data());
 }
@@ -282,7 +282,7 @@ void Logger::LogExportCompleted(std::string_view path, size_t fileSize, float du
     size_t vertices, size_t faces, size_t materials)
 {
     Logf(Level::Info, Category::Export,
-        "Export completato: '%.*s' | %zu KB | %.2fs | V:%zu F:%zu M:%zu",
+        "Export completed: '%.*s' | %zu KB | %.2fs | V:%zu F:%zu M:%zu",
         static_cast<int>(path.size()), path.data(),
         fileSize / 1024, durationSec, vertices, faces, materials);
 }
@@ -290,7 +290,7 @@ void Logger::LogExportCompleted(std::string_view path, size_t fileSize, float du
 void Logger::LogExportError(std::string_view path, std::string_view error)
 {
     Logf(Level::Error, Category::Export,
-        "Errore export '%.*s': %.*s",
+        "Export error '%.*s': %.*s",
         static_cast<int>(path.size()), path.data(),
         static_cast<int>(error.size()), error.data());
 }
@@ -298,14 +298,14 @@ void Logger::LogExportError(std::string_view path, std::string_view error)
 void Logger::LogWindowResize(int logicalW, int logicalH, int fbW, int fbH)
 {
     Logf(Level::Trace, Category::Window,
-        "Finestra ridimensionata: Logica(%dx%d) Framebuffer(%dx%d)",
+        "Window resized: Logical(%dx%d) Framebuffer(%dx%d)",
         logicalW, logicalH, fbW, fbH);
 }
 
 void Logger::LogOpenGLError(std::string_view context, unsigned int errorCode)
 {
     Logf(Level::Error, Category::OpenGL,
-        "Errore OpenGL in '%.*s': 0x%X",
+        "OpenGL error in '%.*s': 0x%X",
         static_cast<int>(context.size()), context.data(), errorCode);
 }
 
@@ -456,7 +456,7 @@ std::string Logger::BuildGitHubIssueBody() const
         md << "| OpenGL | " << m_gpuVersion << " |\n";
     }
     md << "\n</details>\n\n";
-    md << "## Description\n_Descrivi il problema qui..._\n\n";
+    md << "## Description\n_Describe the issue here..._\n\n";
     md << "<details><summary><b>Logs</b></summary>\n\n```log\n";
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -508,7 +508,7 @@ bool Logger::ExportAndOpenBugReport()
 {
     std::string report = BuildGitHubIssueBody();
     bool copied = CopyToClipboard(report);
-    Log(Level::Info, Category::App, "Bug report copiato negli appunti");
+    Log(Level::Info, Category::App, "Bug report copied to clipboard");
     bool opened = !m_notionFormUrl.empty() ? OpenUrl(m_notionFormUrl) : true;
     return copied && opened;
 }

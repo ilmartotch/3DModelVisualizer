@@ -214,3 +214,23 @@ glm::vec3 PickingBuffer::readPixel(int x, int y) {
 
     return glm::vec3(pixelData[0], pixelData[1], pixelData[2]);
 }
+
+/*
+PickingBuffer implements GPU-based object picking using color IDs.
+
+How it works:
+1. Each object is assigned a unique color based on its ID via SceneManager::idToColor
+2. Scene is rendered to this offscreen buffer with flat colors, no lighting
+3. When user clicks, readPixel reads the color at that position
+4. Color is converted back to object ID via SceneManager::colorToId
+
+Framebuffer attachments:
+- COLOR_ATTACHMENT0: RGBA8 for visual feedback, optional
+- COLOR_ATTACHMENT1: RGBA32F for actual picking data with float precision
+- DEPTH_ATTACHMENT: 24-bit depth for correct occlusion
+
+Important: Y coordinate is flipped because OpenGL framebuffers have origin
+at bottom-left while window coordinates have origin at top-left.
+
+The buffer auto-resizes when window size changes via framebuffer callback.
+*/

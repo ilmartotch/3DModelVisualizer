@@ -165,7 +165,6 @@ glm::vec2 Model::generateCubicUV(const glm::vec3& position, const glm::vec3& nor
 
 void Model::generateProceduralUVs(UVMappingType mappingType) {
     if (hasUVs) {
-        std::cout << "Modello " << m_name << " ha già coordinate UV, skip generazione procedurale" << std::endl;
         return;
     }
     
@@ -182,9 +181,6 @@ void Model::generateProceduralUVs(UVMappingType mappingType) {
     }
     
     uvMappingType = mappingType;
-    
-    std::cout << "Generazione UV procedurali per " << m_name 
-              << " usando mapping: " << static_cast<int>(mappingType) << std::endl;
     
     size_t floatsPerVertex = 6;
     size_t vertexCount = m_vertices.size() / floatsPerVertex;
@@ -240,6 +236,4 @@ void Model::generateProceduralUVs(UVMappingType mappingType) {
         
         glBindVertexArray(0);
     }
-    
-    std::cout << "UV procedurali generate con successo per " << m_name << std::endl;
 }

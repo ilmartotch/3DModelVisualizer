@@ -1,24 +1,12 @@
 #include "../Include/SceneObject.h"
 
-void SceneObject::setOverrideTexture(GLuint texID) {
-    overrideTextureID = texID;
-    hasOverrideTexture_ = true;
-    clearOverrideColor();
-}
+/*
+SceneObject is a lightweight wrapper that holds:
+- Transform data including position, rotation and scale
+- Reference to a shared Model
+- Override appearance via color or texture for per-instance customization
+- Selection state for editor interaction
 
-void SceneObject::setOverrideColor(const glm::vec4& color) {
-    overrideColor = color;
-    hasOverrideColor_ = true;
-    clearOverrideTexture();
-}
-
-void SceneObject::clearOverrideTexture() {
-    if (hasOverrideTexture_ && overrideTextureID != 0) {}
-    overrideTextureID = 0;
-    hasOverrideTexture_ = false;
-}
-
-void SceneObject::clearOverrideColor() {
-    overrideColor = glm::vec4(1.0f);
-    hasOverrideColor_ = false;
-}
+All methods are currently inline in the header for performance.
+If methods grow complex, move implementations here.
+*/

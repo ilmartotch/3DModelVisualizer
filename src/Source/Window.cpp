@@ -4,20 +4,18 @@
 #include <stb_image.h>
 
 #ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 #include <windows.h>
 #include <dwmapi.h>
 #pragma comment(lib, "dwmapi.lib")
 #endif
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
 
 Window::Window()
     : m_window(nullptr)
-    , m_draggingTitleBar(false)
-    , m_dragStartX(0.0)
-    , m_dragStartY(0.0)
-    , m_windowPosX(0)
-    , m_windowPosY(0)
+    , m_width(0)
+    , m_height(0)
+    , m_resized(false)
 {
 }
 
@@ -35,8 +33,6 @@ bool Window::initialize(int width, int height, const char* title) {
 
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
     glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
@@ -46,6 +42,9 @@ bool Window::initialize(int width, int height, const char* title) {
         glfwTerminate();
         return false;
     }
+
+    m_width = width;
+    m_height = height;
 
     glfwMakeContextCurrent(m_window);
     glfwSwapInterval(1);
@@ -71,6 +70,7 @@ bool Window::initialize(int width, int height, const char* title) {
     }
 #endif
 
+    // Load window icon
     int iconWidth, iconHeight, iconChannels;
     unsigned char* iconData = stbi_load("Assets/Images/logo.png", &iconWidth, &iconHeight, &iconChannels, 4);
     if (iconData) {
@@ -85,14 +85,8 @@ bool Window::initialize(int width, int height, const char* title) {
     return true;
 }
 
-bool Window::loadAppIcon(const char* iconPath) {
-    return true;
-}
-
-void Window::setupBorderlessWindow() {}
-
 void Window::processInput() {
-    if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {}
+    // Reserved for future input handling
 }
 
 void Window::pollEvents() const {
@@ -110,3 +104,16 @@ bool Window::shouldClose() const {
 GLFWwindow* Window::getGLFWwindow() const {
     return m_window;
 }
+
+/*
+Window class wraps GLFW window creation and management.
+
+Key features:
+- OpenGL 4.6 context creation
+- Dark mode title bar on Windows via DWM API
+- Window icon loading from Assets/Images/logo.png
+- V-Sync enabled by default
+
+The window resize callback is set in main.cpp via glfwSetFramebufferSizeCallback
+to allow access to application-level state like picking buffer and viewport.
+*/

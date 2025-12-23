@@ -20,7 +20,6 @@ void Grid::initialize() {
     glGenBuffers(1, &m_vbo);
 
     glBindVertexArray(m_vao);
-
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
 
@@ -42,16 +41,17 @@ void Grid::render(GLuint shader,
                   const glm::vec3& zAxisColor) {
     glUseProgram(shader);
 
-
+    // Pass inverse matrices for ray-based grid rendering
     glm::mat4 invView = glm::inverse(view);
     glm::mat4 invProjection = glm::inverse(projection);
-	glm::mat4 viewProjectionMatrix = projection * view;
+    glm::mat4 viewProjectionMatrix = projection * view;
 
     glUniformMatrix4fv(glGetUniformLocation(shader, "invView"), 1, GL_FALSE, glm::value_ptr(invView));
     glUniformMatrix4fv(glGetUniformLocation(shader, "invProjection"), 1, GL_FALSE, glm::value_ptr(invProjection));
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewProjectionMatrix"), 1, GL_FALSE, glm::value_ptr(viewProjectionMatrix));
     glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, &cameraPos[0]);
 
+    // Grid mode and appearance
     glUniform1i(glGetUniformLocation(shader, "uInfinite"), infiniteGrid ? 1 : 0);
     glUniform1f(glGetUniformLocation(shader, "uHalfSize"), halfSize);
     glUniform3fv(glGetUniformLocation(shader, "uGridColor"), 1, &gridColor[0]);
@@ -79,3 +79,17 @@ void Grid::cleanup() {
         m_vao = 0;
     }
 }
+
+/*
+The Grid is rendered using a fullscreen quad with a raymarching shader.
+The shader reconstructs world-space coordinates and draws grid lines
+procedurally, which allows for infinite grids with distance-based fading.
+
+Key shader uniforms:
+- invView/invProjection for reconstructing world rays from screen coords
+- uInfinite toggles between infinite and bounded grid modes
+- uHalfSize defines boundary for finite grid mode
+- uGridColor, uXAxisColor, uZAxisColor for visual customization
+
+The grid plane is at Y=0. Finite mode shows a boundary and limits objects.
+*/

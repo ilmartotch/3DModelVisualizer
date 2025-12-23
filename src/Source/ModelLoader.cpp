@@ -317,7 +317,6 @@ void ImportedModel::initialize() {
 
 void ImportedModel::renderMesh(size_t meshIndex) {
     if (meshIndex >= meshRenderData.size()) {
-        std::cerr << "Invalid mesh index: " << meshIndex << std::endl;
         return;
     }
     
@@ -335,7 +334,6 @@ void ImportedModel::renderMesh(size_t meshIndex) {
 
 void ImportedModel::render() {
     if (!m_initialized || meshRenderData.empty()) {
-        std::cerr << "Model not initialized: " << getName() << std::endl;
         return;
     }
     
@@ -343,13 +341,6 @@ void ImportedModel::render() {
         const auto& renderData = meshRenderData[i];
         
         glBindVertexArray(renderData.VAO);
-        
-        /*
-        if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, renderData.textureID);
-        }
-        */
         
         if (renderData.indexCount > 0) {
             glDrawElements(GL_TRIANGLES, renderData.indexCount, GL_UNSIGNED_INT, 0);

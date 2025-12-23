@@ -18,8 +18,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             "obj",
             "Wavefront OBJ",
             ".obj",
-            "Formato universale, supportato ovunque. Leggero e leggibile.",
-            "Uso generale, web, visualizzatori 3D, editing",
+            "Universal format, supported everywhere. Lightweight and readable.",
+            "General use, web, 3D viewers, editing",
             true,
             true,
             false,
@@ -31,8 +31,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             "gltf2",
             "glTF 2.0",
             ".gltf",
-            "Standard moderno per il web. Ottimo per WebGL e Three.js.",
-            "Web 3D, AR/VR, pipeline moderne",
+            "Modern web standard. Great for WebGL and Three.js.",
+            "Web 3D, AR/VR, modern pipelines",
             true,
             true,
             true,
@@ -44,8 +44,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             "glb2",
             "glTF 2.0 Binary",
             ".glb",
-            "Come glTF ma in un unico file binario compatto",
-            "Distribuzione, app mobile, AR/VR",
+            "Like glTF but in a single compact binary file",
+            "Distribution, mobile apps, AR/VR",
             true,
             true,
             true,
@@ -57,8 +57,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             "fbx",
             "Autodesk FBX",
             ".fbx",
-            "Standard industry per Maya, 3ds Max, Blender, Unity, Unreal.",
-            "Game development, animazione, VFX",
+            "Industry standard for Maya, 3ds Max, Blender, Unity, Unreal.",
+            "Game development, animation, VFX",
             true,
             true,
             true,
@@ -70,8 +70,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             "collada",
             "COLLADA",
             ".dae",
-            "Formato XML aperto. Buona interoperabilità tra software.",
-            "Interchange tra DCC tools diversi",
+            "Open XML format. Good interoperability between software.",
+            "Interchange between different DCC tools",
             true,
             true,
             true,
@@ -83,8 +83,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             "stl",
             "STereoLithography",
             ".stl",
-            "Solo geometria. Usato per stampa 3D e CAD.",
-            "Stampa 3D, prototipazione, CAD",
+            "Geometry only. Used for 3D printing and CAD.",
+            "3D printing, prototyping, CAD",
             false,
             false,
             false,
@@ -96,8 +96,8 @@ std::vector<AssimpSceneExporter::ExportFormat> AssimpSceneExporter::getSupported
             "ply",
             "Stanford PLY",
             ".ply",
-            "Formato per mesh con colori vertex. Usato in scansioni 3D.",
-            "Scansioni 3D, point clouds, ricerca",
+            "Mesh format with vertex colors. Used in 3D scanning.",
+            "3D scanning, point clouds, research",
             false,
             false,
             false,
@@ -187,17 +187,17 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
     ExportResult result;
     result.outputPath = outputPath;
     
-    std::cout << "[ASSIMP EXPORT] Inizio export formato: " << formatId << std::endl;
+    std::cout << "[ASSIMP EXPORT] Starting export, format: " << formatId << std::endl;
     std::cout << "[ASSIMP EXPORT] Output: " << outputPath << std::endl;
     
     aiScene* scene = buildAssimpScene(sceneManager, result);
     if (!scene) {
-        result.errorMessage = "Impossibile costruire la scena Assimp";
+        result.errorMessage = "Failed to build Assimp scene";
         std::cerr << "[ASSIMP EXPORT] " << result.errorMessage << std::endl;
         return result;
     }
     
-    std::cout << "[ASSIMP EXPORT] Scena creata: " 
+    std::cout << "[ASSIMP EXPORT] Scene created: " 
               << scene->mNumMeshes << " meshes, "
               << scene->mNumMaterials << " materials" << std::endl;
 
@@ -213,15 +213,15 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
             embedTexturesIntoScene(scene, textureMap, result);
         } else {
             if (embedTextures && !supportsEmbedded) {
-                result.warnings.push_back("Il formato selezionato non supporta l'incorporamento delle texture. Verranno salvate in /textures accanto al file.");
+                result.warnings.push_back("Selected format doesn't support texture embedding. They will be saved in /textures next to the file.");
             }
 
             if (copyTextures) {
                 fs::path exportDir = fs::path(outputPath).parent_path();
                 std::string copyError;
                 if (!copyTexturesWithTracking(textureMap, exportDir, copyError)) {
-                    std::cerr << "[ASSIMP EXPORT] Warning copia texture: " << copyError << std::endl;
-                    result.warnings.push_back(std::string("Copia texture: ") + copyError);
+                    std::cerr << "[ASSIMP EXPORT] Warning copying textures: " << copyError << std::endl;
+                    result.warnings.push_back(std::string("Texture copy: ") + copyError);
                 } else {
                     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
                         auto it2 = textureMap.find(i);
@@ -246,7 +246,7 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
             }
         }
         if (result.texturesMissing > 0) {
-            result.warnings.push_back("Alcune texture non sono state salvate perché il file di origine non è disponibile.");
+            result.warnings.push_back("Some textures were not saved because the source file is unavailable.");
         }
     }
     
@@ -266,7 +266,7 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
     
     if (exportResult != AI_SUCCESS) {
         result.success = false;
-        result.errorMessage = std::string("Export fallito: ") + exporter.GetErrorString();
+        result.errorMessage = std::string("Export failed: ") + exporter.GetErrorString();
         std::cerr << "[ASSIMP EXPORT] " << result.errorMessage << std::endl;
         delete scene;
         return result;
@@ -279,7 +279,7 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
             result.fileSize = fs::file_size(outputPath);
         }
     } catch (const std::exception& e) {
-        std::cerr << "[ASSIMP EXPORT] Impossibile leggere dimensione file: " << e.what() << std::endl;
+        std::cerr << "[ASSIMP EXPORT] Unable to read file size: " << e.what() << std::endl;
     }
     
     auto endTime = std::chrono::high_resolution_clock::now();
@@ -288,18 +288,18 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
     
     result.success = true;
     
-    std::cout << "[ASSIMP EXPORT]Export completato con successo!" << std::endl;
-    std::cout << "[ASSIMP EXPORT]Vertici: " << result.totalVertices << std::endl;
-    std::cout << "[ASSIMP EXPORT]Facce: " << result.totalFaces << std::endl;
-    std::cout << "[ASSIMP EXPORT]Dimensione: " << (result.fileSize / 1024) << " KB" << std::endl;
+    std::cout << "[ASSIMP EXPORT] Export completed successfully!" << std::endl;
+    std::cout << "[ASSIMP EXPORT] Vertices: " << result.totalVertices << std::endl;
+    std::cout << "[ASSIMP EXPORT] Faces: " << result.totalFaces << std::endl;
+    std::cout << "[ASSIMP EXPORT] Size: " << (result.fileSize / 1024) << " KB" << std::endl;
     if (result.texturesEmbedded) {
-        std::cout << "[ASSIMP EXPORT]Texture embedded: " << result.texturesEmbeddedCount << std::endl;
+        std::cout << "[ASSIMP EXPORT] Textures embedded: " << result.texturesEmbeddedCount << std::endl;
     }
     if (result.externalTexturesCopied) {
-        std::cout << "[ASSIMP EXPORT]Texture copiate: " << result.texturesCopiedCount << std::endl;
+        std::cout << "[ASSIMP EXPORT] Textures copied: " << result.texturesCopiedCount << std::endl;
     }
     if (result.texturesMissing > 0) {
-        std::cout << "[ASSIMP EXPORT]Texture mancanti: " << result.texturesMissing << std::endl;
+        std::cout << "[ASSIMP EXPORT] Textures missing: " << result.texturesMissing << std::endl;
     }
     
     delete scene;
@@ -344,7 +344,7 @@ aiScene* AssimpSceneExporter::buildAssimpScene(
     const auto& objects = sceneManager.getObjects();
     const size_t numObjects = objects.size();
     if (numObjects == 0) {
-        std::cerr << "[ASSIMP EXPORT] Warning: Scena vuota" << std::endl;
+        std::cerr << "[ASSIMP EXPORT] Warning: Empty scene" << std::endl;
         return scene;
     }
     
@@ -366,7 +366,7 @@ aiScene* AssimpSceneExporter::buildAssimpScene(
 
     for (const auto& obj : objects) {
         if (!obj || !obj->getModel()) {
-            std::cerr << "[ASSIMP EXPORT] Warning: Oggetto nullo saltato" << std::endl;
+            std::cerr << "[ASSIMP EXPORT] Warning: Null object skipped" << std::endl;
             continue;
         }
 
@@ -377,13 +377,13 @@ aiScene* AssimpSceneExporter::buildAssimpScene(
         );
 
         if (!mesh) {
-            std::cerr << "[ASSIMP EXPORT] Warning: Impossibile convertire mesh: "
+            std::cerr << "[ASSIMP EXPORT] Warning: Unable to convert mesh: "
                       << obj->getName() << std::endl;
             continue;
         }
 
         if (meshIndex >= capacityMeshes || meshIndex >= capacityMaterials || meshIndex >= capacityChildren) {
-            std::cerr << "[ASSIMP EXPORT] Bound overflow prevenuto (meshIndex=" << meshIndex
+            std::cerr << "[ASSIMP EXPORT] Bound overflow prevented (meshIndex=" << meshIndex
                       << ", capacities: meshes=" << capacityMeshes
                       << ", materials=" << capacityMaterials
                       << ", children=" << capacityChildren << ")" << std::endl;
@@ -439,13 +439,13 @@ aiMesh* AssimpSceneExporter::convertModelToMesh(
     const size_t floatsPerVertex = hasUVs ? 8u : 6u;
 
     if (vertices.empty() || (vertices.size() % floatsPerVertex) != 0) {
-        std::cerr << "[ASSIMP EXPORT] Warning: Vertices non coerenti per mesh: " << meshName << std::endl;
+        std::cerr << "[ASSIMP EXPORT] Warning: Inconsistent vertices for mesh: " << meshName << std::endl;
         return nullptr;
     }
 
     const size_t numVertices = vertices.size() / floatsPerVertex;
     if (numVertices == 0) {
-        std::cerr << "[ASSIMP EXPORT] Warning: Mesh senza vertici: " << meshName << std::endl;
+        std::cerr << "[ASSIMP EXPORT] Warning: Mesh without vertices: " << meshName << std::endl;
         return nullptr;
     }
     
@@ -487,7 +487,7 @@ aiMesh* AssimpSceneExporter::convertModelToMesh(
     
     if (!indices.empty()) {
         if ((indices.size() % 3u) != 0) {
-            std::cerr << "[ASSIMP EXPORT] Warning: Indici non multipli di 3 per mesh: " << meshName << std::endl;
+            std::cerr << "[ASSIMP EXPORT] Warning: Indices not multiple of 3 for mesh: " << meshName << std::endl;
             return mesh;
         }
 
@@ -576,7 +576,7 @@ bool AssimpSceneExporter::copyTexturesWithTracking(
         for (const auto& kv : textureMap) {
             const fs::path srcPath(kv.second);
             if (!fs::exists(srcPath)) {
-                std::cerr << "[TEXTURE] File non trovato: " << srcPath << std::endl;
+                std::cerr << "[TEXTURE] File not found: " << srcPath << std::endl;
                 continue;
             }
 
@@ -584,13 +584,13 @@ bool AssimpSceneExporter::copyTexturesWithTracking(
             if (copied.insert(filename).second) {
                 fs::path dstPath = texturesDir / filename;
                 fs::copy_file(srcPath, dstPath, fs::copy_options::overwrite_existing);
-                std::cout << "[TEXTURE] Copiata: " << filename << std::endl;
+                std::cout << "[TEXTURE] Copied: " << filename << std::endl;
             }
         }
 
         return true;
     } catch (const std::exception& e) {
-        error = std::string("Errore copia texture: ") + e.what();
+        error = std::string("Error copying textures: ") + e.what();
         return false;
     }
 }
@@ -620,19 +620,19 @@ void AssimpSceneExporter::embedTexturesIntoScene(
 
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) {
-            result.warnings.push_back(std::string("Impossibile leggere la texture: ") + path);
+            result.warnings.push_back(std::string("Unable to read texture: ") + path);
             continue;
         }
         std::streamsize size = file.tellg();
         file.seekg(0, std::ios::beg);
         if (size <= 0) {
-            result.warnings.push_back(std::string("Texture vuota o illeggibile: ") + path);
+            result.warnings.push_back(std::string("Empty or unreadable texture: ") + path);
             continue;
         }
 
         std::vector<char> buffer(static_cast<size_t>(size));
         if (!file.read(buffer.data(), size)) {
-            result.warnings.push_back(std::string("Lettura fallita per texture: ") + path);
+            result.warnings.push_back(std::string("Read failed for texture: ") + path);
             continue;
         }
 
@@ -667,7 +667,7 @@ void AssimpSceneExporter::embedTexturesIntoScene(
         }
     }
     if (result.texturesMissing > 0) {
-        result.warnings.push_back("Alcune texture non sono state incorporate perché il file di origine non è disponibile.");
+        result.warnings.push_back("Some textures were not embedded because the source file is unavailable.");
     }
 }
 

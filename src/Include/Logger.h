@@ -23,7 +23,6 @@ public:
         Error
     };
 
-    // Categorie predefinite per organizzare i log
     struct Category {
         static constexpr const char* App = "APP";
         static constexpr const char* Window = "WINDOW";
@@ -52,16 +51,13 @@ public:
         std::string category;
     };
 
-    // Singleton
     static Logger& Get();
 
-    // Log base
     void Log(Level level, std::string_view message);
     void Log(Level level, std::string_view category, std::string_view message);
     void Logf(Level level, const char* fmt, ...);
     void Logf(Level level, const char* category, const char* fmt, ...);
 
-    // Shorthand
     void Trace(std::string_view msg) { Log(Level::Trace, msg); }
     void Info(std::string_view msg) { Log(Level::Info, msg); }
     void Warn(std::string_view msg) { Log(Level::Warn, msg); }
@@ -72,7 +68,6 @@ public:
     void Warn(std::string_view cat, std::string_view msg) { Log(Level::Warn, cat, msg); }
     void Error(std::string_view cat, std::string_view msg) { Log(Level::Error, cat, msg); }
 
-    // Model helpers 
     void LogModelAdded(std::string_view modelName, unsigned int id,
         size_t vertexCount, size_t indexCount, bool hasTexture);
     void LogModelLoaded(std::string_view path, size_t meshCount,
@@ -80,7 +75,6 @@ public:
     void LogModelLoadError(std::string_view path, std::string_view error);
     void LogModelRemoved(std::string_view modelName, unsigned int id);
 
-    // Texure helpers
     void LogTextureLoaded(std::string_view path, unsigned int glId,
         int width, int height, int channels);
     void LogTextureLoadError(std::string_view path, std::string_view error);
@@ -90,35 +84,29 @@ public:
         unsigned int oldTextureId, unsigned int newTextureId);
     void LogTextureRemoved(std::string_view objectName, unsigned int objectId);
 
-    // Scene helpers
     void LogObjectAdded(std::string_view name, unsigned int id);
     void LogObjectRemoved(std::string_view name, unsigned int id);
     void LogObjectSelected(std::string_view name, unsigned int id);
     void LogObjectDeselected();
     void LogObjectRenamed(std::string_view oldName, std::string_view newName, unsigned int id);
 
-    // Ambiente helpers
     void LogGridModeChanged(bool infinite);
     void LogLightingChanged(std::string_view parameter, std::string_view value);
     void LogRenderModeChanged(std::string_view mode);
 
-    // Shader helpers
     void LogShaderLoaded(std::string_view shaderName);
     void LogShaderError(std::string_view shaderName, std::string_view error);
 
-	// Export helpers
     void LogExportStarted(std::string_view format, std::string_view path);
     void LogExportCompleted(std::string_view path, size_t fileSize, float durationSec,
         size_t vertices, size_t faces, size_t materials);
     void LogExportError(std::string_view path, std::string_view error);
 
-	// System helpers
     void LogWindowResize(int logicalW, int logicalH, int fbW, int fbH);
     void LogOpenGLError(std::string_view context, unsigned int errorCode);
     void LogOpenGLInfo(std::string_view vendor, std::string_view renderer, std::string_view version);
     void LogSystemInfo(std::string_view info);
 
-	// Data access
     const std::deque<Entry>& GetEntries() const noexcept { return m_entries; }
     std::size_t GetEntryCount() const noexcept { return m_entries.size(); }
 
@@ -127,7 +115,6 @@ public:
         const std::string& textFilter = "",
         const std::string& categoryFilter = "") const;
 
-	// Configuration
     void SetMaxEntries(std::size_t max);
     void SetGlfwWindow(GLFWwindow* window);
     void SetAppVersion(std::string_view version);
@@ -135,7 +122,6 @@ public:
     void AddExtraSystemInfo(std::string_view line);
     void Clear();
 
-    // Export and report
     std::string BuildMarkdownReport() const;
     std::string BuildGitHubIssueBody() const;
     std::string BuildPlainTextLog(bool includeTimestamp = true, bool includeLevel = true) const;
@@ -143,7 +129,6 @@ public:
     bool OpenUrl(const std::string& url) const;
     bool ExportAndOpenBugReport();
 
-	// Utilities
     static const char* LevelToString(Level level) noexcept;
     static const char* LevelToIcon(Level level) noexcept;
     static ImVec4 LevelToColor(Level level) noexcept;
@@ -174,7 +159,6 @@ private:
     std::string m_gpuVersion;
 };
 
-// Shorthand macros
 #define LOG_TRACE(msg) Logger::Get().Trace(msg)
 #define LOG_INFO(msg)  Logger::Get().Info(msg)
 #define LOG_WARN(msg)  Logger::Get().Warn(msg)

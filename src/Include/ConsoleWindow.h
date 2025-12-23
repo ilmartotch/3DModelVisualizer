@@ -9,10 +9,8 @@ class ConsoleWindow final
 public:
     static ConsoleWindow& Get();
 
-    /// Disegna la finestra console (chiamare dentro ImGui frame)
     void Draw(bool* pOpen = nullptr);
 
-    /// Configurazione
     void SetTitle(const std::string& title) { m_title = title; }
 
 private:
@@ -27,20 +25,17 @@ private:
 
     std::string m_title = "Console";
 
-    // Filtri
     bool m_showTrace = true;
     bool m_showInfo = true;
     bool m_showWarn = true;
     bool m_showError = true;
     char m_filterText[256] = { 0 };
 
-    // Opzioni visualizzazione
     bool m_autoScroll = true;
     bool m_showTimestamp = true;
     bool m_showLevel = true;
     bool m_wrapText = false;
 
-    // Stato UI
     float m_lastReportTime = -10.0f;
     bool m_lastReportSuccess = false;
 };

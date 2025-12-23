@@ -383,11 +383,11 @@ const char* Logger::LevelToIcon(Level level) noexcept
 ImVec4 Logger::LevelToColor(Level level) noexcept
 {
     switch (level) {
-    case Level::Trace: return ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
-    case Level::Info:  return ImVec4(0.8f, 0.9f, 1.0f, 1.0f);
-    case Level::Warn:  return ImVec4(1.0f, 0.85f, 0.4f, 1.0f);
-    case Level::Error: return ImVec4(1.0f, 0.4f, 0.4f, 1.0f);
-    default:           return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    case Level::Trace: return ImVec4(0.55f, 0.55f, 0.58f, 1.0f);
+    case Level::Info:  return ImVec4(0.70f, 0.78f, 0.85f, 1.0f);
+    case Level::Warn:  return ImVec4(0.85f, 0.70f, 0.35f, 1.0f);
+    case Level::Error: return ImVec4(0.90f, 0.40f, 0.40f, 1.0f);
+    default:           return ImVec4(0.85f, 0.85f, 0.87f, 1.0f);
     }
 }
 

@@ -55,7 +55,6 @@ bool Window::initialize(int width, int height, const char* title) {
         return false;
     }
 
-    // Personalizza la title bar nativa (Windows 11+)
 #ifdef _WIN32
     HWND hwnd = glfwGetWin32Window(m_window);
     if (hwnd) {
@@ -72,7 +71,6 @@ bool Window::initialize(int width, int height, const char* title) {
     }
 #endif
 
-    // Carica icona dalla risorsa PNG
     int iconWidth, iconHeight, iconChannels;
     unsigned char* iconData = stbi_load("Assets/Images/logo.png", &iconWidth, &iconHeight, &iconChannels, 4);
     if (iconData) {
@@ -91,14 +89,10 @@ bool Window::loadAppIcon(const char* iconPath) {
     return true;
 }
 
-void Window::setupBorderlessWindow() {
-    // Non più necessaria per finestra con bordi nativi
-}
+void Window::setupBorderlessWindow() {}
 
 void Window::processInput() {
-    if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-        // Non chiudere con ESC
-    }
+    if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {}
 }
 
 void Window::pollEvents() const {

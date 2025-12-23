@@ -6,9 +6,8 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include <iostream>
-#include <functional> // Per std::hash
+#include <functional>
 
-// Definiamo un hasher per glm::vec4 da usare con std::unordered_map
 struct vec4_hash {
     std::size_t operator()(const glm::vec4& v) const {
         return std::hash<float>()(v.x) ^
@@ -20,29 +19,23 @@ struct vec4_hash {
 
 class TextureManager {
 public:
-    // Singleton
     static TextureManager& getInstance() {
         static TextureManager instance;
         return instance;
     }
 
-    // Carica una texture da file
     GLuint loadTexture(const std::string& path);
 
-    // Crea una texture da un colore solido
     GLuint createColorTexture(const glm::vec4& color);
 
-    // Ottiene la texture di default (grigio)
     GLuint getDefaultTexture();
 
-    // Pulisce tutte le texture caricate
     void cleanup();
 
 private:
     TextureManager();
     ~TextureManager();
 
-    // Prevenire copia
     TextureManager(const TextureManager&) = delete;
     TextureManager& operator=(const TextureManager&) = delete;
 
@@ -51,4 +44,4 @@ private:
     GLuint m_defaultTexture;
 };
 
-#endif // TEXTURE_MANAGER_H
+#endif

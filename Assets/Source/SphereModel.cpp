@@ -13,12 +13,10 @@ SphereModel::~SphereModel() {
 void SphereModel::initialize() {
     if (m_initialized) return;
 
-    // Generiamo i vertici della sfera
     float radius = 0.5f;
     float sectorStep = 2.0f * std::numbers::pi / m_sectors;
     float stackStep = std::numbers::pi / m_stacks;
 
-    // Svuotiamo i vettori vertici e indici
     m_vertices.clear();
     m_indices.clear();
 
@@ -54,13 +52,11 @@ void SphereModel::initialize() {
         }
     }
 
-    // Generazione indici
     for (int i = 0; i < m_stacks; ++i) {
         int k1 = i * (m_sectors + 1);
         int k2 = k1 + m_sectors + 1;
 
         for (int j = 0; j < m_sectors; ++j, ++k1, ++k2) {
-            // 2 triangoli per faccia
             if (i != 0) {
                 m_indices.push_back(k1);
                 m_indices.push_back(k2);
@@ -78,7 +74,6 @@ void SphereModel::initialize() {
 
     }
 
-    // Creazione dei buffer OpenGL
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
     glGenBuffers(1, &m_ebo);
@@ -91,11 +86,9 @@ void SphereModel::initialize() {
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_indices.size() * sizeof(unsigned int), m_indices.data(), GL_STATIC_DRAW);
 
-    // Posizioni
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-    // Colori
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
@@ -110,23 +103,19 @@ void SphereModel::render() {
 
     switch (m_renderMode) {
     case RenderMode::SOLID:
-        // Modalità solida (default)
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
         break;
 
     case RenderMode::WIREFRAME:
-        // Modalità wireframe
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
         glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
         break;
 
     case RenderMode::SOLID_WITH_WIREFRAME:
-        // Prima renderizza il solido
         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDrawElements(GL_TRIANGLES, m_indices.size(), GL_UNSIGNED_INT, 0);
 
-        // Poi renderizza il wireframe
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(-1.0f, -1.0f);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -137,7 +126,6 @@ void SphereModel::render() {
         break;
     }
 
-    // Ripristina lo stato
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glBindVertexArray(0);
 }
@@ -154,21 +142,17 @@ void SphereModel::setupVertexAttributes() {
     
     GLsizei stride = hasUVs ? 8 * sizeof(float) : 6 * sizeof(float);
 
-    // Posizioni (location 0)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
     glEnableVertexAttribArray(0);
 
-    // Normali (location 1)
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    // UV (location 2) - solo se presenti
     if (hasUVs) {
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
     }
     else {
-        // Disabilita l'attributo UV se non presente
         glDisableVertexAttribArray(2);
     }
 }

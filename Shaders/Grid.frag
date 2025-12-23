@@ -5,21 +5,17 @@ out vec4 FragColor;
 
 in vec3 worldPos_var;
 
-// Uniforms
 uniform vec3 cameraPos;
-
-// Nuovi uniform
-uniform int  uInfinite;   // 0 = finita (default), 1 = infinita
-uniform float uHalfSize;  // half-size (5 => 10x10)
-uniform vec3 uGridColor;  // linee griglia
-uniform vec3 uXAxisColor; // asse X (linea su Z=0)
-uniform vec3 uZAxisColor; // asse Z (linea su X=0)
+uniform int  uInfinite;
+uniform float uHalfSize;
+uniform vec3 uGridColor;
+uniform vec3 uXAxisColor;
+uniform vec3 uZAxisColor;
 uniform mat4 viewProjectionMatrix;
 
-// Parametri
 const float fadeStart = 50.0;
 const float fadeEnd   = 100.0;
-const float gridLineWidth = 0.02;
+const float gridLineWidth = 0.025;
 
 float drawGrid(vec2 coord) {
     vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
@@ -41,14 +37,12 @@ void main() {
 
     vec4 clipPos = viewProjectionMatrix * vec4(worldPos, 1.0);
 
-    // Clamp per modalità FINITA
     if (uInfinite == 0) {
         if (abs(worldPos.x) > uHalfSize || abs(worldPos.z) > uHalfSize) {
             discard;
         }
     }
 
-    // Dissolvenza solo per modalità INFINITA
     float fade = 1.0;
     if (uInfinite == 1) {
         float dist = length(worldPos - cameraPos);
@@ -57,19 +51,22 @@ void main() {
     }
 
     float gridMajor = drawGrid(worldPos.xz);
-    float gridMinor = drawGrid(worldPos.xz * 10.0) * 0.3;
+    float gridMinor = drawGrid(worldPos.xz * 10.0) * 0.25;
     float gridLines = gridMajor + gridMinor * (1.0 - gridMajor);
 
-    vec3 finalColor = uGridColor;
+    // Lighter grid color for dark background
+    vec3 baseGridColor = vec3(0.35, 0.35, 0.38);
+    vec3 finalColor = baseGridColor;
+    
+    // Colored axis lines
     if (abs(worldPos.z) < gridLineWidth) finalColor = uXAxisColor;
     if (abs(worldPos.x) < gridLineWidth) finalColor = uZAxisColor;
 
-    float alpha = gridLines * fade;
+    float alpha = gridLines * fade * 0.6;
     if (abs(worldPos.z) < gridLineWidth || abs(worldPos.x) < gridLineWidth) {
         alpha = min(1.0, alpha + 0.5);
     }
 
     FragColor = vec4(finalColor, alpha);
-    
     gl_FragDepth = clipPos.z / clipPos.w * 0.5 + 0.5;
 }

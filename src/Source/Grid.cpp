@@ -9,7 +9,6 @@ Grid::~Grid() {
 }
 
 void Grid::initialize() {
-    // Vertici di un semplice quad che copre lo schermo in NDC
     std::vector<float> vertices = {
         -1.0f, -1.0f, 0.0f,
          1.0f, -1.0f, 0.0f,
@@ -43,7 +42,7 @@ void Grid::render(GLuint shader,
                   const glm::vec3& zAxisColor) {
     glUseProgram(shader);
 
-    // Matrici inverse
+
     glm::mat4 invView = glm::inverse(view);
     glm::mat4 invProjection = glm::inverse(projection);
 	glm::mat4 viewProjectionMatrix = projection * view;
@@ -53,7 +52,6 @@ void Grid::render(GLuint shader,
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewProjectionMatrix"), 1, GL_FALSE, glm::value_ptr(viewProjectionMatrix));
     glUniform3fv(glGetUniformLocation(shader, "cameraPos"), 1, &cameraPos[0]);
 
-    // Uniform modalità/parametri griglia
     glUniform1i(glGetUniformLocation(shader, "uInfinite"), infiniteGrid ? 1 : 0);
     glUniform1f(glGetUniformLocation(shader, "uHalfSize"), halfSize);
     glUniform3fv(glGetUniformLocation(shader, "uGridColor"), 1, &gridColor[0]);

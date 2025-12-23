@@ -124,7 +124,6 @@ AssimpSceneExporter::ExportPreview AssimpSceneExporter::generateExportPreview(
     for (const auto& obj : objects) {
         if (!obj) continue;
 
-        // Conteggi base
         auto model = obj->getModel();
         if (model) {
             const auto& vertices = model->getVertices();
@@ -141,7 +140,6 @@ AssimpSceneExporter::ExportPreview AssimpSceneExporter::generateExportPreview(
             }
         }
 
-        // Percorso texture con priorità
         std::string texturePath;
         if (obj->hasOverrideTexture()) {
             texturePath = obj->getOverrideTextureSourcePath();
@@ -192,7 +190,6 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
     std::cout << "[ASSIMP EXPORT] Inizio export formato: " << formatId << std::endl;
     std::cout << "[ASSIMP EXPORT] Output: " << outputPath << std::endl;
     
-    // Costruisci aiScene da SceneManager
     aiScene* scene = buildAssimpScene(sceneManager, result);
     if (!scene) {
         result.errorMessage = "Impossibile costruire la scena Assimp";
@@ -204,21 +201,17 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
               << scene->mNumMeshes << " meshes, "
               << scene->mNumMaterials << " materials" << std::endl;
 
-    // Determina se il formato supporta embedded textures
     const auto formats = getSupportedFormats();
     auto fmtIt = std::find_if(formats.begin(), formats.end(), [&](const ExportFormat& f){ return f.id == formatId; });
     const bool supportsEmbedded = (fmtIt != formats.end()) ? fmtIt->supportsEmbeddedTextures : false;
     const bool supportsTextures  = (fmtIt != formats.end()) ? fmtIt->supportsTextures : false;
 
-    // Crea mappa indice-materiale -> percorso texture sorgente
     const auto textureMap = buildTexturePathMap(sceneManager);
 
-    // Gestione texture: embed se richiesto e supportato, altrimenti copia esterna (se richiesto)
     if (supportsTextures) {
         if (embedTextures && supportsEmbedded) {
             embedTexturesIntoScene(scene, textureMap, result);
         } else {
-            // Se embedding non supportato ma richiesto, segnala all'utente
             if (embedTextures && !supportsEmbedded) {
                 result.warnings.push_back("Il formato selezionato non supporta l'incorporamento delle texture. Verranno salvate in /textures accanto al file.");
             }
@@ -230,7 +223,6 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
                     std::cerr << "[ASSIMP EXPORT] Warning copia texture: " << copyError << std::endl;
                     result.warnings.push_back(std::string("Copia texture: ") + copyError);
                 } else {
-                    // Aggiorna i materiali della scena a percorsi relativi ("textures/filename")
                     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {
                         auto it2 = textureMap.find(i);
                         if (it2 == textureMap.end()) continue;
@@ -247,7 +239,6 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
             }
         }
 
-        // Conta texture mancanti (path vuoto o file assente)
         for (const auto& kv : textureMap) {
             const std::string& p = kv.second;
             if (p.empty() || !fs::exists(p)) {
@@ -259,10 +250,8 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
         }
     }
     
-    // Export con Assimp Exporter
     Assimp::Exporter exporter;
     
-    // Post-processing flags
     unsigned int exportFlags = 
         aiProcess_Triangulate |
         aiProcess_JoinIdenticalVertices |
@@ -284,8 +273,7 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
     }
     
     calculateSceneStats(scene, result);
-    
-    // Dimensione file
+
     try {
         if (fs::exists(outputPath)) {
             result.fileSize = fs::file_size(outputPath);
@@ -294,25 +282,24 @@ AssimpSceneExporter::ExportResult AssimpSceneExporter::exportScene(
         std::cerr << "[ASSIMP EXPORT] Impossibile leggere dimensione file: " << e.what() << std::endl;
     }
     
-    // Tempo export
     auto endTime = std::chrono::high_resolution_clock::now();
     std::chrono::duration<float> duration = endTime - startTime;
     result.exportTimeSeconds = duration.count();
     
     result.success = true;
     
-    std::cout << "[ASSIMP EXPORT]   Export completato con successo!" << std::endl;
-    std::cout << "[ASSIMP EXPORT]   Vertici: " << result.totalVertices << std::endl;
-    std::cout << "[ASSIMP EXPORT]   Facce: " << result.totalFaces << std::endl;
-    std::cout << "[ASSIMP EXPORT]   Dimensione: " << (result.fileSize / 1024) << " KB" << std::endl;
+    std::cout << "[ASSIMP EXPORT]Export completato con successo!" << std::endl;
+    std::cout << "[ASSIMP EXPORT]Vertici: " << result.totalVertices << std::endl;
+    std::cout << "[ASSIMP EXPORT]Facce: " << result.totalFaces << std::endl;
+    std::cout << "[ASSIMP EXPORT]Dimensione: " << (result.fileSize / 1024) << " KB" << std::endl;
     if (result.texturesEmbedded) {
-        std::cout << "[ASSIMP EXPORT]   Texture embedded: " << result.texturesEmbeddedCount << std::endl;
+        std::cout << "[ASSIMP EXPORT]Texture embedded: " << result.texturesEmbeddedCount << std::endl;
     }
     if (result.externalTexturesCopied) {
-        std::cout << "[ASSIMP EXPORT]   Texture copiate: " << result.texturesCopiedCount << std::endl;
+        std::cout << "[ASSIMP EXPORT]Texture copiate: " << result.texturesCopiedCount << std::endl;
     }
     if (result.texturesMissing > 0) {
-        std::cout << "[ASSIMP EXPORT]   Texture mancanti: " << result.texturesMissing << std::endl;
+        std::cout << "[ASSIMP EXPORT]Texture mancanti: " << result.texturesMissing << std::endl;
     }
     
     delete scene;
@@ -383,7 +370,6 @@ aiScene* AssimpSceneExporter::buildAssimpScene(
             continue;
         }
 
-        // Converti Model → aiMesh
         aiMesh* mesh = convertModelToMesh(
             obj->getModel().get(),
             obj->getName(),
@@ -413,14 +399,10 @@ aiScene* AssimpSceneExporter::buildAssimpScene(
             obj->getName() + std::string("_Mat")
         );
 
-        // Crea node figlio
         aiNode* node = new aiNode(obj->getName());
         node->mParent = scene->mRootNode;
 
-        // Applica trasformazione
         node->mTransformation = glmToAiMatrix(obj->getModelMatrix());
-
-        // Associa mesh
         node->mNumMeshes = 1;
         node->mMeshes = new unsigned int[1];
         node->mMeshes[0] = meshIndex;
@@ -431,7 +413,6 @@ aiScene* AssimpSceneExporter::buildAssimpScene(
         meshIndex++;
     }
 
-    // Allinea i contatori al numero effettivo di elementi popolati
     scene->mNumMeshes = meshIndex;
     scene->mNumMaterials = meshIndex;
     scene->mRootNode->mNumChildren = meshIndex;
@@ -471,8 +452,6 @@ aiMesh* AssimpSceneExporter::convertModelToMesh(
     aiMesh* mesh = new aiMesh();
     mesh->mName = aiString(meshName);
     mesh->mPrimitiveTypes = aiPrimitiveType_TRIANGLE;
-    
-    // Vertici
     mesh->mNumVertices = static_cast<unsigned int>(numVertices);
     mesh->mVertices = new aiVector3D[numVertices];
     mesh->mNormals = new aiVector3D[numVertices];
@@ -485,21 +464,18 @@ aiMesh* AssimpSceneExporter::convertModelToMesh(
     for (size_t i = 0; i < numVertices; i++) {
         const size_t idx = i * floatsPerVertex;
 
-        // Position
         mesh->mVertices[i] = aiVector3D(
             vertices[idx + 0],
             vertices[idx + 1],
             vertices[idx + 2]
         );
-        
-        // Normal
+
         mesh->mNormals[i] = aiVector3D(
             vertices[idx + 3],
             vertices[idx + 4],
             vertices[idx + 5]
         );
-        
-        // UV
+
         if (hasUVs) {
             mesh->mTextureCoords[0][i] = aiVector3D(
                 vertices[idx + 6],
@@ -509,7 +485,6 @@ aiMesh* AssimpSceneExporter::convertModelToMesh(
         }
     }
     
-    // Facce (triangoli)
     if (!indices.empty()) {
         if ((indices.size() % 3u) != 0) {
             std::cerr << "[ASSIMP EXPORT] Warning: Indici non multipli di 3 per mesh: " << meshName << std::endl;
@@ -540,11 +515,9 @@ aiMaterial* AssimpSceneExporter::createMaterialFromObject(
 {
     aiMaterial* mat = new aiMaterial();
 
-    // Nome materiale
     aiString name(materialName);
     mat->AddProperty(&name, AI_MATKEY_NAME);
 
-    // Texture (priorità a override texture)
     std::string texturePath;
     if (!textureRelativePath.empty()) {
         texturePath = textureRelativePath;
@@ -559,7 +532,6 @@ aiMaterial* AssimpSceneExporter::createMaterialFromObject(
         mat->AddProperty(&texPath, AI_MATKEY_TEXTURE(aiTextureType_DIFFUSE, 0));
     }
 
-    // Colore (se non c'è texture)
     if (obj->hasOverrideColor()) {
         glm::vec4 color = obj->getOverrideColor();
         aiColor4D diffuse(color.r, color.g, color.b, color.a);
@@ -580,7 +552,6 @@ aiMaterial* AssimpSceneExporter::createMaterialFromObject(
 }
 
 aiMatrix4x4 AssimpSceneExporter::glmToAiMatrix(const glm::mat4& mat) {
-    // glm è column-major, Assimp row-major
     return aiMatrix4x4(
         mat[0][0], mat[1][0], mat[2][0], mat[3][0],
         mat[0][1], mat[1][1], mat[2][1], mat[3][1],
@@ -600,7 +571,6 @@ bool AssimpSceneExporter::copyTexturesWithTracking(
         fs::path texturesDir = exportDir / "textures";
         fs::create_directories(texturesDir);
 
-        // Evita copie duplicate
         std::unordered_set<std::string> copied;
 
         for (const auto& kv : textureMap) {
@@ -625,7 +595,6 @@ bool AssimpSceneExporter::copyTexturesWithTracking(
     }
 }
 
-// Embedding delle texture nella aiScene
 void AssimpSceneExporter::embedTexturesIntoScene(
     aiScene* scene,
     const std::unordered_map<unsigned int, std::string>& textureMap,
@@ -633,8 +602,7 @@ void AssimpSceneExporter::embedTexturesIntoScene(
 ) {
     if (!scene || textureMap.empty()) return;
 
-    // Raccogli texture valide da embed e mappa materiale->indice embedded
-    std::vector<std::pair<unsigned int, std::string>> toEmbed; // (materialIndex, path)
+    std::vector<std::pair<unsigned int, std::string>> toEmbed;
     for (const auto& kv : textureMap) {
         const unsigned int matIdx = kv.first;
         const std::string& path   = kv.second;
@@ -644,14 +612,12 @@ void AssimpSceneExporter::embedTexturesIntoScene(
 
     if (toEmbed.empty()) return;
 
-    // Costruisci aiTexture array
     scene->mNumTextures = static_cast<unsigned int>(toEmbed.size());
     scene->mTextures = new aiTexture*[scene->mNumTextures];
 
     for (size_t i = 0; i < toEmbed.size(); ++i) {
         const auto& [matIdx, path] = toEmbed[i];
 
-        // Leggi file in memoria
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) {
             result.warnings.push_back(std::string("Impossibile leggere la texture: ") + path);
@@ -670,14 +636,11 @@ void AssimpSceneExporter::embedTexturesIntoScene(
             continue;
         }
 
-        // Crea aiTexture compressa (mHeight = 0, mWidth = size bytes)
         aiTexture* tex = new aiTexture();
         tex->mHeight = 0;
         tex->mWidth  = static_cast<unsigned int>(size);
         tex->pcData  = new aiTexel[tex->mWidth];
         std::memcpy(tex->pcData, buffer.data(), static_cast<size_t>(size));
-
-        // Format hint (es. "png", "jpg")
         std::string ext = fs::path(path).extension().string();
         if (!ext.empty() && ext[0] == '.') ext.erase(0, 1);
         std::string lower;
@@ -687,7 +650,6 @@ void AssimpSceneExporter::embedTexturesIntoScene(
 
         scene->mTextures[i] = tex;
 
-        // Ritocca materiale per puntare a "*i"
         if (matIdx < scene->mNumMaterials && scene->mMaterials[matIdx]) {
             std::string marker = std::string("*") + std::to_string(i);
             aiString embPath(marker.c_str());
@@ -698,7 +660,6 @@ void AssimpSceneExporter::embedTexturesIntoScene(
     result.texturesEmbedded = true;
     result.texturesEmbeddedCount = scene->mNumTextures;
 
-    // Conta mancanti (path non esistente)
     for (const auto& kv : textureMap) {
         const std::string& p = kv.second;
         if (p.empty() || !fs::exists(p)) {

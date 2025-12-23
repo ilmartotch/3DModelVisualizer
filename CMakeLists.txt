@@ -1,16 +1,13 @@
 cmake_minimum_required(VERSION 3.28)
-# Specifica il toolchain di vcpkg
 set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
 
 project(MyOpenGLProject LANGUAGES CXX)
 
-# Imposta standard C++
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 
-# src/CMakeLists.txt
 add_executable(App
   # Main
   src/main.cpp
@@ -51,7 +48,6 @@ add_executable(App
  "src/Include/ConsoleWindow.h" "src/Source/ConsoleWindow.cpp"
 )
 
-# Trova pacchetti con vcpkg
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
@@ -80,14 +76,12 @@ target_link_libraries(App PRIVATE
 set(SHADERS_DIR ${CMAKE_SOURCE_DIR}/Shaders)
 set(ASSETS_IMAGES_DIR ${CMAKE_SOURCE_DIR}/Assets/Images)
 
-# Copia automatica degli shader nella cartella dell'eseguibile dopo il build
 add_custom_command(TARGET App POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${SHADERS_DIR}
         $<TARGET_FILE_DIR:App>/Shaders
 )
 
-# Copia automatica delle immagini (logo/icona) nella cartella dell'eseguibile
 add_custom_command(TARGET App POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory
         $<TARGET_FILE_DIR:App>/Assets/Images
@@ -97,7 +91,6 @@ add_custom_command(TARGET App POST_BUILD
     COMMENT "Copying logo resources to build directory"
 )
 
-# Include directories
 target_include_directories(App PRIVATE
     ${CMAKE_SOURCE_DIR}/src/Include
 )
@@ -110,11 +103,9 @@ target_include_directories(App PRIVATE
   ${CMAKE_SOURCE_DIR}/Assets/Include
 )
 
-# Imposta l'icona dell'applicazione su Windows
 if(WIN32)
     set(APP_ICON_PATH "${CMAKE_SOURCE_DIR}/Assets/Images/app_icon.ico")
     if(EXISTS ${APP_ICON_PATH})
-        # Crea file RC per l'icona
         configure_file(
             "${CMAKE_SOURCE_DIR}/app_icon.rc.in"
             "${CMAKE_BINARY_DIR}/app_icon.rc"

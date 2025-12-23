@@ -14,29 +14,23 @@ void PyramidModel::initialize() {
 	if (m_initialized) return;
 
 	m_vertices = {
-        // Posizione           // Normale
-        // Base
         -0.5f, 0.0f, -0.5f,  0.0f, -1.0f,  0.0f, // 0
          0.5f, 0.0f, -0.5f,  0.0f, -1.0f,  0.0f, // 1
          0.5f, 0.0f,  0.5f,  0.0f, -1.0f,  0.0f, // 2
         -0.5f, 0.0f,  0.5f,  0.0f, -1.0f,  0.0f, // 3
 
-        // Faccia frontale
         -0.5f, 0.0f,  0.5f,  0.0f,  0.447f, 0.894f, // 4
          0.5f, 0.0f,  0.5f,  0.0f,  0.447f, 0.894f, // 5
          0.0f, 0.8f,  0.0f,  0.0f,  0.447f, 0.894f, // 6 (Apice)
 
-        // Faccia destra
          0.5f, 0.0f,  0.5f,  0.894f, 0.447f, 0.0f, // 7
          0.5f, 0.0f, -0.5f,  0.894f, 0.447f, 0.0f, // 8
          0.0f, 0.8f,  0.0f,  0.894f, 0.447f, 0.0f, // 9 (Apice)
 
-        // Faccia posteriore
          0.5f, 0.0f, -0.5f,  0.0f,  0.447f, -0.894f, // 10
         -0.5f, 0.0f, -0.5f,  0.0f,  0.447f, -0.894f, // 11
          0.0f, 0.8f,  0.0f,  0.0f,  0.447f, -0.894f, // 12 (Apice)
 
-        // Faccia sinistra
         -0.5f, 0.0f, -0.5f, -0.894f, 0.447f, 0.0f, // 13
         -0.5f, 0.0f,  0.5f, -0.894f, 0.447f, 0.0f, // 14
          0.0f, 0.8f,  0.0f, -0.894f, 0.447f, 0.0f  // 15 (Apice)
@@ -73,24 +67,19 @@ void PyramidModel::initialize() {
 }
 
 void PyramidModel::setupVertexAttributes() {
-    // Controlla se abbiamo UV o no
     GLsizei stride = hasUVs ? 8 * sizeof(float) : 6 * sizeof(float);
 
-    // Posizioni (location 0)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
     glEnableVertexAttribArray(0);
 
-    // Normali (location 1)
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
-    // UV (location 2) - solo se presenti
     if (hasUVs) {
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
     }
     else {
-        // Disabilita l'attributo UV se non presente
         glDisableVertexAttribArray(2);
     }
 }

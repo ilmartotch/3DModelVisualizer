@@ -13,14 +13,12 @@
 #include "../Include/ModelManager.h"
 #include "../Include/Model.h"
 
-// Forward declarations
 class ModelManager;
 class SceneManager;
 class SceneObject;
 class ImportedModel;
 class ImagePlaneModel;
 
-// Struttura per memorizzare i dati della mesh
 struct MeshData {
     std::vector<float> vertices;
     std::vector<float> normals;
@@ -35,7 +33,6 @@ struct Vertex {
     glm::vec2 TexCoords;
 };
 
-// Struttura per memorizzare i dati della texture
 struct TextureData {
     unsigned int id = 0;
     std::string type;
@@ -47,13 +44,11 @@ private:
 
 	friend class ModelLoader;
 
-    // vettore mesh
     std::vector<MeshData> meshes;
     std::vector<TextureData> textures;
     std::string directory;
     std::string path;
-    
-    // Struttura per rendering ottimizzato per mesh
+
     struct MeshRenderData {
         GLuint VAO = 0;
         GLuint VBO_vertices = 0;
@@ -61,37 +56,31 @@ private:
         GLuint VBO_texCoords = 0;
         GLuint EBO = 0;
         size_t indexCount = 0;
-        GLuint textureID = 0;        // Texture specifica per questa mesh
-        std::string materialName;    // Nome materiale per batching
+        GLuint textureID = 0;
+        std::string materialName;
     };
     
-    std::vector<MeshRenderData> meshRenderData;  // Dati rendering per ogni mesh
+    std::vector<MeshRenderData> meshRenderData;
 
-    // Dati di normalizzazione per mantenere proporzioni
     glm::vec3 normalizationCenter = glm::vec3(0.0f);
     float normalizationScale = 1.0f;
 
-	void rebuildBaseGeometryData(); // Ricostruisce i VBO/VAO dopo modifiche
+	void rebuildBaseGeometryData();
     
 public:
     ImportedModel(const std::string& name = "ImportedModel");
     virtual ~ImportedModel();
     
     virtual void initialize() override;
-    virtual void render() override;  // Renderizza tutte le mesh
+    virtual void render() override;
     virtual void cleanup() override;
     virtual void setupVertexAttributes() override;
     
-    // Aggiungi mesh al modello
     void addMesh(const MeshData& mesh);
-    // Aggiungi texture
     void addTexture(const TextureData& texture);
-    // Imposta la directory di base
     void setDirectory(const std::string& dir) { directory = dir; }
-    // Imposta il path del modello
     void setPath(const std::string& modelPath) { path = modelPath; }
     
-    // Getter per i dati del modello
     const std::vector<MeshData>& getMeshes() const { return meshes; }
     const std::vector<TextureData>& getTextures() const { return textures; }
 
@@ -99,16 +88,12 @@ public:
 
     const std::string& getPath() const { return path; }
 
-    // Renderizza solo una mesh specifica (per oggetti separati)
     void renderMesh(size_t meshIndex);
     
-    // Ottieni il numero di mesh
     size_t getMeshCount() const { return meshes.size(); }
     
-    // Ottieni nome mesh (per UI)
     std::string getMeshName(size_t index) const;
 
-    // Getter/setter per normalizzazione
     void setNormalizationCenter(const glm::vec3& center) { normalizationCenter = center; }
     void setNormalizationScale(float scale) { normalizationScale = scale; }
     glm::vec3 getNormalizationCenter() const { return normalizationCenter; }
@@ -120,18 +105,16 @@ public:
                 return renderData.textureID;
             }
         }
-        // Fallback alla texture del modello base
         return getTextureID();
     }
 };
 
 class ModelLoader {
 public:
-    // Modalità di caricamento modelli complessi
     enum class LoadMode {
-        SINGLE_OBJECT,      // Tutto in un unico SceneObject (default)
-        SEPARATE_MESHES,    // Una mesh = un SceneObject
-        BY_MATERIAL         // Raggruppa mesh con stesso materiale
+        SINGLE_OBJECT,
+        SEPARATE_MESHES,
+        BY_MATERIAL
     };
     
     static bool openModelFile(ModelManager& modelManager, SceneManager& sceneManager,
@@ -155,7 +138,6 @@ public:
 
     using ProgressCallback = std::function<void(float, const std::string&)>;
     
-    // Carica con modalità specificata
     static bool openModelFileAdvanced(
         ModelManager& modelManager, 
         SceneManager& sceneManager,
@@ -167,18 +149,14 @@ public:
         ProgressCallback progressCallback = nullptr);
     
 private:
-    // Callback globale per progresso
     static ProgressCallback s_progressCallback;
     
-    // Helper per report progresso
     static void reportProgress(float progress, const std::string& message);
 
-    // Propaga trasformazioni nodi
     static void processNode(aiNode* node, const aiScene* scene, 
                            std::shared_ptr<ImportedModel> model, const std::string& directory,
                            const aiMatrix4x4& parentTransform);
     
-    // Applica trasformazione cumulativa a pos/normali
     static MeshData processMesh(aiMesh* mesh, const aiScene* scene, const aiMatrix4x4& transform);
     
     static std::vector<TextureData> loadMaterialTextures(aiMaterial* mat, aiTextureType type, 

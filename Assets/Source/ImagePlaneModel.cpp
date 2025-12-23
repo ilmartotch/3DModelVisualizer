@@ -26,24 +26,19 @@ void ImagePlaneModel::setImageDimensions(int width, int height) {
 }
 
 void ImagePlaneModel::generateQuadGeometry() {
-    // Calcola dimensioni del quad mantenendo aspect ratio
     float quadWidth = BASE_SIZE * aspectRatio;
     float quadHeight = BASE_SIZE;
     
-    // Centra il quad sull'origine
     float halfW = quadWidth * 0.5f;
     float halfH = quadHeight * 0.5f;
-    
-    // Vertici del quad (4 vertici, piano XY guardando verso +Z)
+
     float vertices[] = {
-        // Posizioni (X, Y, Z)
         -halfW, -halfH, 0.0f,  // Bottom-left
          halfW, -halfH, 0.0f,  // Bottom-right
          halfW,  halfH, 0.0f,  // Top-right
         -halfW,  halfH, 0.0f   // Top-left
     };
     
-    // Normali (tutte verso +Z)
     float normals[] = {
         0.0f, 0.0f, 1.0f,
         0.0f, 0.0f, 1.0f,
@@ -51,7 +46,6 @@ void ImagePlaneModel::generateQuadGeometry() {
         0.0f, 0.0f, 1.0f
     };
     
-    // Coordinate texture (standard UV mapping)
     float texcoords[] = {
         0.0f, 0.0f,  // Bottom-left
         1.0f, 0.0f,  // Bottom-right
@@ -59,38 +53,32 @@ void ImagePlaneModel::generateQuadGeometry() {
         0.0f, 1.0f   // Top-left
     };
     
-    // Indici (2 triangoli)
     unsigned int indices[] = {
         0, 1, 2,  // Primo triangolo
         2, 3, 0   // Secondo triangolo
     };
     
-    // Genera VAO
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
-    
-    // VBO vertici
+
     glGenBuffers(1, &VBO_vertices);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_vertices);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
-    
-    // VBO normali
+
     glGenBuffers(1, &VBO_normals);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_normals);
     glBufferData(GL_ARRAY_BUFFER, sizeof(normals), normals, GL_STATIC_DRAW);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(1);
-    
-    // VBO texcoords
+
     glGenBuffers(1, &VBO_texcoords);
     glBindBuffer(GL_ARRAY_BUFFER, VBO_texcoords);
     glBufferData(GL_ARRAY_BUFFER, sizeof(texcoords), texcoords, GL_STATIC_DRAW);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(2);
-    
-    // EBO
+
     glGenBuffers(1, &EBO);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
@@ -105,8 +93,7 @@ void ImagePlaneModel::initialize() {
         std::cout << "ImagePlaneModel già inizializzato: " << getName() << std::endl;
         return;
     }
-    
-    // Se non abbiamo dimensioni, usa default quadrato
+
     if (imageWidth == 0 || imageHeight == 0) {
         setImageDimensions(512, 512);
         std::cout << "Usando dimensioni default per " << getName() << std::endl;
@@ -163,8 +150,7 @@ std::shared_ptr<Model> ImagePlaneModel::clone() const {
     auto newModel = std::make_shared<ImagePlaneModel>(getName());
     newModel->setImageDimensions(imageWidth, imageHeight);
     newModel->setHasAlpha(hasAlpha);
-    
-    // Copia texture se presente
+
     if (hasTexture()) {
         newModel->setTexture(getTextureID());
     }
@@ -174,16 +160,13 @@ std::shared_ptr<Model> ImagePlaneModel::clone() const {
 
 void ImagePlaneModel::setupVertexAttributes() {
     glBindVertexArray(VAO);
-    
-    // Attributo 0: Posizione
+
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    
-    // Attributo 1: Normale
+
     glEnableVertexAttribArray(1);
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    
-    // Attributo 2: Coordinate texture
+
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
     

@@ -48,7 +48,6 @@ float computeShadowPlanar(vec3 worldPos) {
     for (int x = -2; x <= 2; ++x) {
         for (int y = -2; y <= 2; ++y) {
             vec2 offset = vec2(x, y) * texel * radius;
-
             float depth = texture(uShadowMap, uv.xy + offset).r;
             shadow += (depth + bias) < uv.z ? 1.0 : 0.0;
         }
@@ -56,7 +55,7 @@ float computeShadowPlanar(vec3 worldPos) {
     shadow /= 25.0;
     shadow = pow(clamp(shadow, 0.0, 1.0), 1.1);
 
-    return shadow; // 0 = no shadow, 1 = full shadow
+    return shadow;
 }
 
 void main() {

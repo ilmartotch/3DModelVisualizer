@@ -29,7 +29,6 @@ GLuint LoadShader(const char* vertexPath, const char* fragmentPath)
     glShaderSource(vertex, 1, &vCode, nullptr);
     glCompileShader(vertex);
 
-    // Verifica errori di compilazione
     int success;
     char infoLog[512];
     glGetShaderiv(vertex, GL_COMPILE_STATUS, &success);
@@ -48,7 +47,6 @@ GLuint LoadShader(const char* vertexPath, const char* fragmentPath)
     glAttachShader(program, fragment);
     glLinkProgram(program);
 
-    // Verifica errori di linking
     glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
         glGetProgramInfoLog(program, 512, NULL, infoLog);
@@ -61,7 +59,6 @@ GLuint LoadShader(const char* vertexPath, const char* fragmentPath)
     return program;
 }
 
-// Implementazione della funzione per impostare una matrice uniforme
 void SetUniformMat4(GLuint shader, const char* name, const glm::mat4& matrix) {
     GLint location = glGetUniformLocation(shader, name);
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));

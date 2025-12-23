@@ -19,7 +19,6 @@ public:
         updateModelMatrix();
     }
 
-    // Getters
     unsigned int getId() const { return m_id; }
     std::shared_ptr<Model> getModel() const { return m_model; }
     const std::string& getName() const { return m_name; }
@@ -30,15 +29,13 @@ public:
     bool getSelected() const { return m_selected; }
     const glm::vec3& getInitialPosition() const { return m_initialPosition; }
 
-    // Setters
     void setName(const std::string& name) { m_name = name; }
     void setPosition(const glm::vec3& position) { m_position = position; updateModelMatrix(); }
     void setRotation(const glm::quat& rotation) { m_rotation = rotation; updateModelMatrix(); }
     void setScale(const glm::vec3& scale) { m_scale = scale; updateModelMatrix(); }
     void setSelected(bool selected) { m_selected = selected; }
-    void setModel(std::shared_ptr<Model> model) { m_model = model; }  // CORRETTO IL TYPO
+    void setModel(std::shared_ptr<Model> model) { m_model = model; }
 
-    // Metodi per il colore di override
     void setOverrideColor(const glm::vec4& color) {
         overrideColor = color;
         useOverrideColor = true;
@@ -81,7 +78,6 @@ public:
         return m_overrideTextureSourcePath; 
     }
 
-    // Aggiorna la matrice del modello
     void updateModelMatrix() {
         m_modelMatrix = glm::mat4(1.0f);
         m_modelMatrix = glm::translate(m_modelMatrix, m_position);
@@ -106,7 +102,6 @@ private:
     bool m_selected;
     glm::vec3 m_initialPosition;
 
-    // Proprietà per il colore di override
     bool useOverrideColor;
     glm::vec4 overrideColor;
 

@@ -18,7 +18,6 @@
 #include <GLFW/glfw3native.h>
 #endif
 
-// Callback globale per progresso
 ModelLoader::ProgressCallback ModelLoader::s_progressCallback = nullptr;
 
 void ModelLoader::reportProgress(float progress, const std::string& message) {
@@ -51,21 +50,16 @@ bool ModelLoader::openModelFile(ModelManager& modelManager, SceneManager& sceneM
         std::string filePath = ofn.lpstrFile;
 
         try {
-            // Usa il nome del file come nome del modello
             std::string modelName = std::filesystem::path(filePath).stem().string();
 
-            // Carica il modello
             auto loadedModel = loadModel(filePath);
             if (loadedModel) {
-                // Registra il modello
                 modelManager.registerModel(loadedModel);
                 loadedModel->initialize();
 
-                // Calcola una posizione di spawn valida usando la logica centralizzata
                 glm::vec3 spawnPos = sceneManager.findValidSpawnPosition(
                     cameraPos, cameraTarget, 1.0f, 1.0f);
 
-                // Crea un'istanza del modello nella scena
                 auto newObj = sceneManager.addObject(modelName, spawnPos);
 
                 if (newObj) {
@@ -88,7 +82,6 @@ bool ModelLoader::openModelFile(ModelManager& modelManager, SceneManager& sceneM
 #endif
 }
 
-// Gestione coerente del caricamento texture
 bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& sceneManager,
                                  std::string& outTexturePath, GLuint& outTextureID,
                                  bool& needsConfirmation) {
@@ -112,7 +105,6 @@ bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& scen
         std::string filePath = ofn.lpstrFile;
         outTexturePath = filePath;
 
-        // Verifica che ci sia un oggetto selezionato
         auto selectedObj = sceneManager.getSelectedObject();
         if (!selectedObj) {
             std::cerr << "ERRORE: Seleziona un oggetto prima di applicare una texture." << std::endl;
@@ -141,7 +133,7 @@ bool ModelLoader::openTextureFile(ModelManager& modelManager, SceneManager& scen
 
         if (hasExistingOverride || hasModelTexture) {
             needsConfirmation = true;
-            return true; // chiederà conferma nel layer UI
+            return true;
         }
 
         if (model && !model->hasUVCoordinates()) {
@@ -199,7 +191,6 @@ bool ModelLoader::applyTextureToSelected(SceneManager& sceneManager, GLuint text
     return true;
 }
 
-// Inizializzazione del cache delle texture
 std::unordered_map<std::string, unsigned int> ModelLoader::textureCache;
 
 ImportedModel::ImportedModel(const std::string& name) : Model(name) {
@@ -236,11 +227,9 @@ void ImportedModel::initialize() {
         const auto& mesh = meshes[i];
         MeshRenderData renderData;
         
-        // 1. VAO
         glGenVertexArrays(1, &renderData.VAO);
         glBindVertexArray(renderData.VAO);
         
-        // 2. VBO vertici
         glGenBuffers(1, &renderData.VBO_vertices);
         glBindBuffer(GL_ARRAY_BUFFER, renderData.VBO_vertices);
         glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(float), 
@@ -248,7 +237,6 @@ void ImportedModel::initialize() {
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
         glEnableVertexAttribArray(0);
         
-        // 3. VBO normali
         if (!mesh.normals.empty()) {
             glGenBuffers(1, &renderData.VBO_normals);
             glBindBuffer(GL_ARRAY_BUFFER, renderData.VBO_normals);
@@ -258,7 +246,6 @@ void ImportedModel::initialize() {
             glEnableVertexAttribArray(1);
         }
         
-        // 4. VBO texture coordinates
         if (!mesh.texCoords.empty()) {
             glGenBuffers(1, &renderData.VBO_texCoords);
             glBindBuffer(GL_ARRAY_BUFFER, renderData.VBO_texCoords);
@@ -272,7 +259,6 @@ void ImportedModel::initialize() {
             std::cout << "  ATTENZIONE: Mesh " << i << " non ha coordinate UV!" << std::endl;
         }
         
-        // 5. EBO indici
         if (!mesh.indices.empty()) {
             glGenBuffers(1, &renderData.EBO);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, renderData.EBO);
@@ -281,8 +267,7 @@ void ImportedModel::initialize() {
                          mesh.indices.data(), GL_STATIC_DRAW);
             renderData.indexCount = mesh.indices.size();
         }
-        
-        // 6. Assegna texture alla mesh
+
         renderData.textureID = 0;
         renderData.materialName = mesh.materialName;
         
@@ -359,10 +344,12 @@ void ImportedModel::render() {
         
         glBindVertexArray(renderData.VAO);
         
-        /*if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
+        /*
+        if (renderData.textureID != 0 && glIsTexture(renderData.textureID)) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, renderData.textureID);
-        }*/
+        }
+        */
         
         if (renderData.indexCount > 0) {
             glDrawElements(GL_TRIANGLES, renderData.indexCount, GL_UNSIGNED_INT, 0);
@@ -491,7 +478,6 @@ std::shared_ptr<Model> ImportedModel::clone() const {
     return newModel;
 }
 
-// Applica trasformazioni di nodo ricorsivamente
 void ModelLoader::processNode(aiNode* node, const aiScene* scene, 
                             std::shared_ptr<ImportedModel> model, const std::string& directory,
                             const aiMatrix4x4& parentTransform) {
@@ -684,8 +670,7 @@ void ModelLoader::createSeparateMeshObjects(
     
     const auto& meshes = model->getMeshes();
     const auto& textures = model->getTextures();
-    
-    // Estrai parametri di normalizzazione dal modello originale (già applicati ai vertici)
+
     glm::vec3 normCenter = model->getNormalizationCenter();
     float normScale = model->getNormalizationScale();
     
@@ -697,7 +682,6 @@ void ModelLoader::createSeparateMeshObjects(
         std::string meshName = model->getMeshName(i);
         std::string uniqueModelName = baseName + "_mesh_" + std::to_string(i);
 
-        // Calcola AABB e centro della MESH i (nei vertici già normalizzati)
         glm::vec3 minV( std::numeric_limits<float>::max());
         glm::vec3 maxV(-std::numeric_limits<float>::max());
         const auto& srcMesh = meshes[i];
@@ -713,7 +697,6 @@ void ModelLoader::createSeparateMeshObjects(
         }
         glm::vec3 meshCenter = (minV + maxV) * 0.5f;
 
-        // Ricentra i vertici della mesh intorno al suo centro per creare un modello locale coerente
         MeshData recenteredMesh = srcMesh;
         for (size_t vi = 0; vi < recenteredMesh.vertices.size(); vi += 3) {
             recenteredMesh.vertices[vi + 0] -= meshCenter.x;
@@ -721,15 +704,12 @@ void ModelLoader::createSeparateMeshObjects(
             recenteredMesh.vertices[vi + 2] -= meshCenter.z;
         }
 
-        // Crea un nuovo modello contenente SOLO questa mesh ricentrata
         auto singleMeshModel = std::make_shared<ImportedModel>(uniqueModelName);
         singleMeshModel->addMesh(recenteredMesh);
 
-        // Eredita i parametri di normalizzazione
         singleMeshModel->setNormalizationCenter(normCenter);
         singleMeshModel->setNormalizationScale(normScale);
-        
-        // Texture: scegli una diffuse disponibile
+
         GLuint meshTextureID = 0;
         bool textureFound = false;
         std::string materialName = srcMesh.materialName;
@@ -764,7 +744,6 @@ void ModelLoader::createSeparateMeshObjects(
 
         singleMeshModel->setDirectory(model->getPath());
 
-        // Registra e inizializza
         modelManager.registerModel(singleMeshModel);
         singleMeshModel->initialize();
         if (!singleMeshModel->isInitialized()) {
@@ -772,12 +751,7 @@ void ModelLoader::createSeparateMeshObjects(
             continue;
         }
 
-        // POSIZIONAMENTO RELATIVO CORRETTO:
-        // Posiziona il SceneObject nel centro originario della mesh (normalizzato),
-        // mentre i vertici sono ricentrati localmente -> world = base + center + (v - center)
         glm::vec3 spawnPos = basePosition + meshCenter;
-
-        // Crea SceneObject
         std::string objName = baseName + "_" + meshName;
         auto newObj = sceneManager.addObject(uniqueModelName, spawnPos);
         
@@ -804,7 +778,6 @@ void ModelLoader::createSeparateMeshObjects(
     std::cout << "=== Completata creazione oggetti separati ===" << std::endl;
 }
 unsigned int ModelLoader::loadTexture(const std::string& path) {
-    // Cache
     if (textureCache.find(path) != textureCache.end()) {
         std::cout << "Texture trovata nella cache: " << path << std::endl;
         return textureCache[path];
@@ -901,7 +874,6 @@ unsigned int ModelLoader::loadTexture(const std::string& path) {
     return textureID;
 }
 
-// Helper per generare hash del contenuto texture (per embedded)
 static std::string generateTextureHash(const unsigned char* data, size_t size) {
     std::stringstream ss;
     ss << std::hex;
@@ -1014,8 +986,7 @@ std::vector<TextureData> ModelLoader::loadMaterialTextures(
                 textureLoaded = true;
             }
         }
-        
-        // Filesystem
+
         if (!textureLoaded) {
             std::vector<std::string> possiblePaths;
             possiblePaths.push_back(str.C_Str());
@@ -1130,7 +1101,6 @@ void ImportedModel::setupVertexAttributes() {
     }
 }
 
-// Caricamento immagine come plane (usato da openImageFile)
 std::shared_ptr<ImagePlaneModel> ModelLoader::loadImageAsPlane(const std::string& path, std::string& errorMessage) {
     std::cout << "Caricamento immagine come plane: " << path << std::endl;
 
@@ -1229,14 +1199,11 @@ bool ModelLoader::openImageFile(ModelManager& modelManager, SceneManager& sceneM
     auto model = loadImageAsPlane(filePath, errorMessage);
     if (!model) return false;
 
-    // Registra e inizializza
     modelManager.registerModel(model);
     model->initialize();
 
-    // CameraTarget in questa firma lo usiamo come spawnPos calcolato dal chiamante
     glm::vec3 spawnPos = cameraTarget;
 
-    // Crea oggetto scena
     auto newObj = sceneManager.addObject("ImagePlane", spawnPos);
     if (!newObj) {
         errorMessage = "Failed to create scene object for image plane.";

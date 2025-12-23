@@ -59,7 +59,6 @@ void CubeModel::initialize() {
 
     hasUVs = false;
 
-    // Creazione dei buffer OpenGL
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
     glGenBuffers(1, &m_ebo);
@@ -81,20 +80,16 @@ void CubeModel::initialize() {
 void CubeModel::setupVertexAttributes() {
     GLsizei stride = hasUVs ? 8 * sizeof(float) : 6 * sizeof(float);
     
-    // Posizioni (location 0)
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)0);
     glEnableVertexAttribArray(0);
     
-    // Normali (location 1)
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, stride, (void*)(3 * sizeof(float)));
     glEnableVertexAttribArray(1);
-    
-    // UV (location 2) - solo se presenti
+
     if (hasUVs) {
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, stride, (void*)(6 * sizeof(float)));
         glEnableVertexAttribArray(2);
     } else {
-        // Disabilita l'attributo UV se non presente
         glDisableVertexAttribArray(2);
     }
 }

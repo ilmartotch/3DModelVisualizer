@@ -2,7 +2,6 @@
 #include <stb_image.h>
 
 TextureManager::TextureManager() : m_defaultTexture(0) {
-    // Inizializza la texture di default al primo utilizzo
     getDefaultTexture();
 }
 
@@ -11,7 +10,6 @@ TextureManager::~TextureManager() {
 }
 
 GLuint TextureManager::loadTexture(const std::string& path) {
-    // Controlla se la texture è già in cache
     if (m_textureMap.find(path) != m_textureMap.end()) {
         return m_textureMap[path];
     }
@@ -46,7 +44,6 @@ GLuint TextureManager::loadTexture(const std::string& path) {
 
         stbi_image_free(data);
 
-        // Aggiungi alla cache
         m_textureMap[path] = textureID;
     }
     else {
@@ -59,7 +56,6 @@ GLuint TextureManager::loadTexture(const std::string& path) {
 }
 
 GLuint TextureManager::createColorTexture(const glm::vec4& color) {
-    // Controlla se una texture per questo colore esiste già
     if (m_colorTextureMap.find(color) != m_colorTextureMap.end()) {
         return m_colorTextureMap[color];
     }
@@ -68,7 +64,6 @@ GLuint TextureManager::createColorTexture(const glm::vec4& color) {
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
 
-    // Crea una texture 1x1 con il colore specificato
     unsigned char data[] = {
         (unsigned char)(color.r * 255.0f),
         (unsigned char)(color.g * 255.0f),
@@ -77,16 +72,12 @@ GLuint TextureManager::createColorTexture(const glm::vec4& color) {
     };
 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-
-    // Imposta i parametri per evitare il bisogno di mipmap
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    // Aggiungi alla cache
     m_colorTextureMap[color] = textureID;
 
     return textureID;

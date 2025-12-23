@@ -17,7 +17,6 @@ struct DirLight {
 uniform DirLight uDirLight;
 
 uniform sampler2D textureSampler;
-// uniform sampler2DShadow uShadowMap; // Disable sampler comparison for now
 uniform sampler2D uShadowMap;
 
 uniform mat4 lightSpaceMatrix;
@@ -42,25 +41,19 @@ uniform vec3 viewPos;
 // PCF con kernel 3x3
 float computeShadow(vec3 worldPos, vec3 normal) {
     if (uUseShadowMap == 0) return 0.0;
-    // if (worldPos.y < uFloorHeight) return 0.0; // niente ombre sotto il pavimento
 
     vec4 lsPos = lightSpaceMatrix * vec4(worldPos, 1.0);
     vec3 projCoords = lsPos.xyz / lsPos.w;
 
-    // NDC out-of-range => non considerare in ombra
+    // NDC out-of-range => not in the shadow
     if (projCoords.x < -1.0 || projCoords.x > 1.0 ||
         projCoords.y < -1.0 || projCoords.y > 1.0 ||
         projCoords.z <  0.0 || projCoords.z > 1.0) {
         return 0.0;
     }
 
-    // Remap a [0,1]
-    // For fucking reasons the projCoords z component is in [-1, 1] range
+    // the projCoords z component is in [-1, 1] range
     vec3 uv = projCoords * 0.5 + 0.5;
-
-    // Bias in funzione della normale
-    // float ndotl = max(dot(normalize(normal), normalize(-uDirLight.direction)), 0.0);
-    // float bias = mix(0.005, 0.001, ndotl);
 
     float angle = max(dot(normalize(normal), normalize(-uDirLight.direction)), 0.0);
     float bias = max(0.005 * (1.0 - angle), 0.0005);
@@ -70,11 +63,6 @@ float computeShadow(vec3 worldPos, vec3 normal) {
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
             vec2 offset = vec2(x, y) * texel;
-            
-            // WTF is this!!!!
-            // float vis = texture(uShadowMap, vec3(projCoords.xy + offset, projCoords.z - bias));
-            // shadow += (1.0 - vis); // 1 = luce, 0 = ombra -> invertiamo
-        
             float depth = texture(uShadowMap, uv.rg + offset).r;
             shadow += (depth + bias) < uv.z ? 1.0f : 0.0f;
         }
@@ -89,16 +77,14 @@ vec3 baseAlbedo() {
     } else if (useTexture == 1) {
         return texture(textureSampler, fs_in.uv).rgb;
     } else {
-        return vec3(0.8);
+        return vec3(0.55);
     }
 }
 
 void main() {
-    // Light icon: rendering unlit con gradiente opzionale
     if (uLightIcon == 1) {
         vec3 c = uLightEmitColor;
         if (uLightGradientEnabled == 1) {
-            // semplice gradiente per feedback visivo
             float t = clamp(normalize(fs_in.normal).y * 0.5 + 0.5, 0.0, 1.0);
             c = mix(uLightGradientEnd, uLightGradientStart, t);
         }
@@ -124,7 +110,8 @@ void main() {
 
     float shadow = computeShadow(fs_in.worldPos, N);
     vec3 ambient = albedo * 0.15;
-    ambient = vec3(0.0f); // Disable ambient for now
+    ambient = vec3(0.0f); 
+    // Disable ambient
 
     vec3 lightColor = uDirLight.color;
     vec3 lit = (1.0 - shadow) * (albedo * diff + lightColor * spec * 0.3) + ambient;

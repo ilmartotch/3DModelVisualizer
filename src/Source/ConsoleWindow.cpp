@@ -47,7 +47,6 @@ void ConsoleWindow::Draw(bool* pOpen)
 
 void ConsoleWindow::DrawToolbar()
 {
-    // Filtri livello con colori
     ImGui::PushStyleColor(ImGuiCol_Text, Logger::LevelToColor(Logger::Level::Trace));
     ImGui::Checkbox("Trace", &m_showTrace);
     ImGui::PopStyleColor();
@@ -71,7 +70,6 @@ void ConsoleWindow::DrawToolbar()
     ImGui::Dummy(ImVec2(20, 0));
     ImGui::SameLine();
 
-    // Filtro testo
     ImGui::SetNextItemWidth(200);
     ImGui::InputTextWithHint("##filter", "Filter...", m_filterText, sizeof(m_filterText));
 
@@ -82,17 +80,20 @@ void ConsoleWindow::DrawToolbar()
         }
     }
 
+    const float buttonWidth = 75.0f;
+    const float groupWidth = buttonWidth * 3.0f + ImGui::GetStyle().ItemSpacing.x * 2.0f;
     ImGui::SameLine();
-    ImGui::Dummy(ImVec2(20, 0));
-    ImGui::SameLine();
+    float startX = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - groupWidth;
+    if (startX > ImGui::GetCursorPosX()) {
+        ImGui::SetCursorPosX(startX);
+    }
 
-    // Pulsanti azione rapida
-    if (ImGui::Button("Clear")) {
+    if (ImGui::Button("Clear", ImVec2(buttonWidth, 0))) {
         Logger::Get().Clear();
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Copy")) {
+    if (ImGui::Button("Copy", ImVec2(buttonWidth, 0))) {
         auto entries = Logger::Get().GetFilteredEntries(
             m_showTrace, m_showInfo, m_showWarn, m_showError, m_filterText);
 
@@ -108,23 +109,12 @@ void ConsoleWindow::DrawToolbar()
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.4f, 0.3f, 1.0f));
-    if (ImGui::Button("Report")) {
+    if (ImGui::Button("Report", ImVec2(buttonWidth, 0))) {
         m_lastReportSuccess = Logger::Get().ExportAndOpenBugReport();
         m_lastReportTime = static_cast<float>(glfwGetTime());
     }
     ImGui::PopStyleColor(2);
 
-    // Feedback report
-    float now = static_cast<float>(glfwGetTime());
-    if (now - m_lastReportTime < 3.0f) {
-        ImGui::SameLine();
-        if (m_lastReportSuccess)
-            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "OK!");
-        else
-            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Failed");
-    }
-
-    ImGui::Separator();
 }
 
 void ConsoleWindow::DrawLogArea()
@@ -133,7 +123,7 @@ void ConsoleWindow::DrawLogArea()
     float availableHeight = ImGui::GetContentRegionAvail().y - footerHeight;
     if (availableHeight < 150) availableHeight = 150;
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.08f, 0.10f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.10f, 0.10f, 0.12f, 1.0f));
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_HorizontalScrollbar;
     if (m_wrapText) flags &= ~ImGuiWindowFlags_HorizontalScrollbar;
@@ -144,7 +134,7 @@ void ConsoleWindow::DrawLogArea()
         m_showTrace, m_showInfo, m_showWarn, m_showError, m_filterText);
 
     if (entries.empty()) {
-        ImGui::TextDisabled("No log entries. Logs will appear here.");
+        ImGui::TextDisabled("No logs yet...");
     }
     else {
         for (const auto* entry : entries) {

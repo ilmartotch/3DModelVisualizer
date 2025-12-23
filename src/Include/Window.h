@@ -26,7 +26,6 @@ public:
     bool loadAppIcon(const char* iconPath);
     void setupBorderlessWindow();
 
-    // Questi metodi non sono più necessari ma mantenuti per compatibilità
     bool isDraggingTitleBar() const { return false; }
     void setDraggingTitleBar(bool dragging) {}
 

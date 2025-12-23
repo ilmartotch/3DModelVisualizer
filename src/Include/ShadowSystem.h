@@ -25,7 +25,6 @@ public:
     
     void updateMatrices(const SceneManager& sceneManager, unsigned int lightObjectIdToExclude);
 
-    // Depth pass: con viewport per ripristinare correttamente dopo il render della shadow map
     void renderDepthPass(SceneManager& sceneManager, GLuint depthShader, unsigned int lightObjectIdToExclude, int viewportWidth, int viewportHeight);
     void bindForShading(GLuint shader, int textureUnit, bool useShadows);
 

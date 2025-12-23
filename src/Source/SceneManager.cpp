@@ -24,7 +24,6 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
     const glm::vec3& position,
     std::optional<unsigned int> forcedId)
 {
-    // Evita duplicati
     if (forcedId && getObjectById(*forcedId)) {
         return nullptr;
     }
@@ -34,30 +33,25 @@ std::shared_ptr<SceneObject> SceneManager::addObject(const std::string& modelNam
 
     unsigned int id = forcedId ? *forcedId : nextId++;
 
-
     auto obj = std::make_shared<SceneObject>(id, model, modelName, position);
     objects.push_back(obj);
     return obj;
 }
 
-// Implementazione del metodo removeObject
 bool SceneManager::removeObject(unsigned int id) {
-    // Trova l'oggetto da rimuovere
     auto it = std::find_if(objects.begin(), objects.end(),
         [id](const std::shared_ptr<SceneObject>& obj) {
             return obj->getId() == id;
         });
 
     if (it == objects.end()) {
-        return false;  // Oggetto non trovato
+        return false;
     }
 
-    // Se stiamo rimuovendo l'oggetto selezionato, deseleziona tutto
     if ((*it)->getSelected()) {
         selectedObjectId = 0;
     }
 
-    // Rimuovi l'oggetto dalla lista
     objects.erase(it);
 
     return true;
@@ -124,10 +118,10 @@ void SceneManager::renderObject(std::shared_ptr<SceneObject> obj, GLuint shader,
     GLint colorLocation = glGetUniformLocation(shader, "objectColor");
     if (colorLocation != -1) {
         if (obj->getSelected()) {
-            glUniform3f(colorLocation, 1.0f, 0.8f, 0.2f); // Arancione per selezione
+            glUniform3f(colorLocation, 1.0f, 0.8f, 0.2f);
         }
         else {
-            glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f); // Bianco normale
+            glUniform3f(colorLocation, 1.0f, 1.0f, 1.0f);
         }
     }
 
@@ -169,7 +163,7 @@ void SceneManager::renderOutline(std::shared_ptr<SceneObject> obj, GLuint shader
 
     SetUniformMat4(shader, "model", outlineMatrix);
     if (colorLocation != -1)
-        glUniform3f(colorLocation, 1.0f, 1.0f, 0.0f); // Giallo
+        glUniform3f(colorLocation, 1.0f, 1.0f, 0.0f);
 
     obj->getModel()->render();
 }
@@ -230,74 +224,60 @@ void SceneManager::updateObjectScale(unsigned int id, const glm::vec3& scale) {
 
 bool SceneManager::isPositionOccupied(const glm::vec3& position, float radius) const {
     for (const auto& obj : objects) {
-        // Controllo della distanza sul piano XZ (ignora Y perché gli oggetti sono appoggiati sul piano)
         float distance = glm::distance(
             glm::vec2(obj->getPosition().x, obj->getPosition().z),
             glm::vec2(position.x, position.z)
         );
 
         if (distance < radius * 2.0f) {
-            return true; // Posizione occupata
+            return true;
         }
     }
-    return false; // Posizione libera
+    return false;
 }
 
 glm::vec3 SceneManager::findValidSpawnPosition(const glm::vec3& cameraPos, const glm::vec3& cameraTarget,
     float yOffset, float padding) const {
-    // Calcola la direzione di vista
     glm::vec3 viewDir = glm::normalize(cameraTarget - cameraPos);
 
     constexpr float kSpawnLift = 0.5f;
 
-    // Punto di intersezione con il piano y=0
     glm::vec3 desiredPos;
 
-    if (viewDir.y < -0.01f) { 
-        // Assicurati che la camera stia guardando verso il basso
-        // Calcola l'intersezione con il piano y=0
+    if (viewDir.y < -0.01f) {
         float t = -cameraPos.y / viewDir.y;
         desiredPos = cameraPos + t * viewDir;
         desiredPos.y = yOffset + kSpawnLift;
     }
     else {
-        // Fallback se la telecamera è parallela o guarda verso l'alto
         desiredPos = glm::vec3(cameraTarget.x, yOffset + kSpawnLift, cameraTarget.z);
     }
 
-    // Se la posizione desiderata è libera, usala direttamente
     if (!isPositionOccupied(desiredPos, padding) &&
         (!hasFiniteSpace() || isWithinBounds(desiredPos))) {
         return desiredPos;
     }
 
-    // Altrimenti, cerca in un pattern a spirale attorno al punto desiderato
-    const float spiralGrowth = 0.8f; // Fattore di crescita della spirale (più piccolo = più denso)
-    const int maxAttempts = 30;      // Numero massimo di tentativi
+    const float spiralGrowth = 0.8f;
+    const int maxAttempts = 30;
 
-    // Angolo iniziale casuale per evitare pattern prevedibili
     float angle = static_cast<float>(rand()) / RAND_MAX * glm::two_pi<float>();
     float radius = padding * 2.0f;
 
     for (int i = 0; i < maxAttempts; i++) {
-        // Calcola posizione sulla spirale
         float x = desiredPos.x + radius * cosf(angle);
         float z = desiredPos.z + radius * sinf(angle);
         glm::vec3 testPos(x, yOffset + kSpawnLift, z);
 
-        if (hasFiniteSpace() && !isWithinBounds(testPos)) {
-            // Salta posizioni fuori dai limiti
-        }
+        if (hasFiniteSpace() && !isWithinBounds(testPos)) {}
         else if (!isPositionOccupied(testPos, padding)) {
             return hasFiniteSpace() ? clampToBounds(testPos) : testPos;
         }
 
-        // Incrementa per la prossima posizione sulla spirale
-        angle += glm::pi<float>() * 0.5f; // 90 gradi
+        angle += glm::pi<float>() * 0.5f;
         radius += padding * spiralGrowth;
     }
 
-    // Se non troviamo uno spazio libero dopo tutti i tentativi, ritorna una posizione distante
     glm::vec3 fallback(desiredPos.x + radius * 2.0f, yOffset, desiredPos.z);
     return hasFiniteSpace() ? clampToBounds(fallback) : fallback;
 }
@@ -360,7 +340,6 @@ glm::vec3 SceneManager::findValidSpawnPositionFinite(const glm::vec3& camPos, co
     return candidate;
 }
 
-// Riposiziona alla posizione iniziale
 void SceneManager::resetObjectToInitialPosition(unsigned int id) {
     auto obj = getObjectById(id);
     if (obj) {
@@ -369,13 +348,11 @@ void SceneManager::resetObjectToInitialPosition(unsigned int id) {
     }
 }
 
-// Rinomina l'oggetto
 void SceneManager::renameObject(unsigned int id, const std::string& newName) {
     auto obj = getObjectById(id);
     if (obj) obj->setName(newName);
 }
 
-// Implementazione del metodo di duplicazione
 std::shared_ptr<SceneObject> SceneManager::duplicateObject(unsigned int sourceId, const glm::vec3& newPosition) {
     auto sourceObj = getObjectById(sourceId);
     if (!sourceObj) return nullptr;
@@ -390,7 +367,6 @@ std::shared_ptr<SceneObject> SceneManager::duplicateObject(unsigned int sourceId
     return newObj;
 }
 
-// Spazio finito
 void SceneManager::setFiniteSpace(bool enabled, float halfSize, float margin) {
     finiteSpaceEnabled = enabled;
     finiteHalfSize = halfSize;
@@ -420,7 +396,6 @@ bool SceneManager::isSystemId(unsigned int id) const {
 }
 
 void SceneManager::applyDefaultName(unsigned int id, const std::string& baseName) {
-    // Nome = baseName_id per coerenza con la richiesta
     std::string newName = baseName + "_" + std::to_string(id);
     renameObject(id, newName);
 }
@@ -431,7 +406,6 @@ std::shared_ptr<SceneObject> SceneManager::addSystemObject(
     unsigned int fixedId,
     const std::string& displayName)
 {
-    // Usa l'overload esistente con ID forzato
     auto obj = addObject(modelName, position, fixedId);
     if (obj) {
         markSystemId(fixedId);

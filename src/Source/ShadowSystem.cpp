@@ -83,28 +83,22 @@ ShadowSystem::SceneBounds ShadowSystem::computeSceneBounds(const SceneManager& s
         b.valid = true;
     }
 
-    // Clamp inferiore al pavimento
     if (b.min.y < m_floorHeight) b.min.y = m_floorHeight;
 
     return b;
 }
 
 void ShadowSystem::updateMatrices(const SceneManager& sceneManager, unsigned int lightObjectIdToExclude) {
-    // Prendi i bounds scena (clampati al pavimento)
     SceneBounds b = computeSceneBounds(sceneManager, lightObjectIdToExclude);
     const glm::vec3 centerWS = 0.5f * (b.min + b.max);
 
-    // Direzione luce e posizione "camera luce"
     const glm::vec3 lightDir = glm::normalize(glm::vec3(0.0f) - m_lightPos);
-    // distanza proporzionale alla diagonale dell'AABB
     const float diag = glm::length(b.max - b.min);
     const float dist = (diag > 0.0001f ? diag : 10.0f);
     const glm::vec3 lightPosWS = centerWS - lightDir * dist;
 
-    // View luce
     m_lightView = glm::lookAt(lightPosWS, centerWS, glm::vec3(0,1,0));
 
-    // Trasforma gli 8 corner dell'AABB in spazio luce e trova il BBox
     std::vector<glm::vec3> corners = {
         {b.min.x, b.min.y, b.min.z}, {b.max.x, b.min.y, b.min.z},
         {b.min.x, b.max.y, b.min.z}, {b.max.x, b.max.y, b.min.z},
@@ -129,16 +123,13 @@ void ShadowSystem::updateMatrices(const SceneManager& sceneManager, unsigned int
         maxZ = std::max(maxZ, lc.z);
     }
 
-    // Padding per evitare tagli e aumentare range Z
     const float pad = 1.0f;
     minX -= pad; maxX += pad;
     minY -= pad; maxY += pad;
-    // Estendi z per sicurezza
     constexpr float zMult = 3.0f;
     if (minZ < 0) minZ *= zMult; else minZ /= zMult;
     if (maxZ < 0) maxZ /= zMult; else maxZ *= zMult;
 
-    // 6) Ortho proj
     m_lightProj = glm::ortho(minX, maxX, minY, maxY, minZ, maxZ);
     m_lightSpaceMatrix = m_lightProj * m_lightView;
 }
@@ -150,26 +141,20 @@ void ShadowSystem::renderDepthPass(SceneManager& sceneManager, GLuint depthShade
     glUseProgram(depthShader);
     SetUniformMat4(depthShader, "lightSpaceMatrix", m_lightSpaceMatrix);
 
-    // Salva viewport corrente e imposta quella della shadow map
     GLint prevViewport[4];
     glGetIntegerv(GL_VIEWPORT, prevViewport);
 
     glViewport(0, 0, m_shadowMapSize, m_shadowMapSize);
     glBindFramebuffer(GL_FRAMEBUFFER, m_depthMapFBO);
     glClear(GL_DEPTH_BUFFER_BIT);
-
-    // Abilita il culling del front-face per ridurre il peter-panning
     glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
 
     sceneManager.renderForDepth(depthShader, lightObjectIdToExclude);
 
-    // Ripristina stato
     glCullFace(GL_BACK);
     glDisable(GL_CULL_FACE);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // Ripristina il viewport originale
     glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
 }
 

@@ -1,72 +1,82 @@
-# BallOfWool - 3D Visualizer Engine
+# 3D Model Visualizer
 
-**BallOfWool** is a real-time 3D visualization and manipulation engine built with modern **C++20** and **OpenGL 4.5**. Designed as a sandbox environment, it allows for the loading, inspection, and manipulation of 3D assets with a focus on lighting and rendering control.
+3D Model Visualizer is a real-time 3D visualization engine built with C++20 and Modern OpenGL (4.5). Designed as a sandbox environment, it allows for the loading, inspection, 
+and manipulation of 3D assets with a focus on lighting control and rendering pipeline understanding. This project serves as a portfolio piece to demonstrate low-level graphics programming skills. 
+While features like the picking system and shadow mapping are fully functional, the codebase is currently undergoing a refactor to transition from the current monolithic structure towards a more modular architecture.
 
-> **⚠️ Work In Progress**: This project is currently under active development. A major refactor is ongoing to transition towards a more robust architecture, aiming to better leverage modern graphics APIs, improve hardware resource optimization, and increase modularity.
+## Technology Stack & Key Features
 
-## 🛠 Technology Stack & Implementation
+The engine is built upon a strictly typed C++ codebase using vcpkg for dependency management and CMake for the build system.
 
-The engine is built upon a strictly typed, modern C++ codebase, leveraging **vcpkg** in manifest mode to handle the entire dependency graph, ensuring reproducible builds across different environments. The build system is orchestrated by **CMake**, facilitating the definition of export targets and resource management.
+* **Core Architecture**
+    Built with C++20 and OpenGL 4.5 (Core Profile). Uses GLFW for window management and GLAD for loader generation.
 
-*   **Core Graphics**: **OpenGL 4.5** (Core Profile) is used for the rendering backend, utilizing **GLAD** for loader generation and **GLFW** for windowing and context management.
-*   **Math & Physics**: **GLM** handles all vector and matrix mathematics, strictly following GLSL conventions for seamless shader integration.
-*   **Asset Management**: **Assimp** is integrated to handle complex model importation, supporting a wide variety of formats (FBX, OBJ, GLTF), while **stb_image** manages texture loading.
-*   **User Interface**: The UI is built with **ImGui**, providing a docking-capable interface for property inspection, coupled with **ImGuizmo** to project 3D manipulation controls directly into the scene view.
+* **Hybrid Shadow System**
+    Combines standard Directional Shadow Mapping (PCF filtered) for object self-shadowing with Planar Contact Shadows to strictly ground objects on the floor surface.
 
-## 🌟 Core Features
+* **Pixel-Perfect Picking**
+    Object selection is achieved via a dedicated framebuffer pass that renders object IDs to an off-screen texture, ensuring 100% accuracy regardless of mesh complexity.
 
-### Scene & Asset Management
-Unlike standard viewers, BallOfWool offers distinct import strategies. Users can load complex scenes and choose to interpret them as a **Single Object** (for easier global manipulation) or **Separate Meshes** (preserving the hierarchy for individual part manipulation). The engine supports dynamic drag-and-drop for images, instantly converting them into textured planes within the 3D space. The environment can be toggled between an **Infinite Grid** for unbounded creativity and a **Finite Space** mode, which enforces logical boundaries and object limits, useful for performance testing or specific game-design constraints.
+* **Smart Asset Management**
+    Uses Assimp to support various formats (FBX, OBJ, GLTF) with options to import scenes as a Single Object or Separate Meshes. Implements the Flyweight pattern to share vertex data across instances and optimize VRAM.
 
-### Advanced Rendering Pipeline
-The visual output is driven by a custom forward rendering pipeline that emphasizes depth and spatial perception:
-*   **Hybrid Shadow System**: Combines standard **Directional Shadow Mapping** (via depth framebuffers) for self-shadowing of objects with **Planar Contact Shadows** projected onto the floor. This dual approach ensures objects feel grounded and not "floating," providing realistic visual feedback during manipulation.
-*   **Picking System**: Pixel-perfect object selection is achieved via a dedicated framebuffer pass that renders object IDs to an off-screen texture, ensuring 100% accuracy regardless of mesh complexity or distance from the camera.
+* **Interactive UI**
+    Features a custom interface built with ImGui (docking enabled) and ImGuizmo for direct 3D manipulation. Includes a custom in-app log console to debug import errors directly within the viewport.
 
-## ⚙️ Architecture & Execution Pipeline
+* **Math & Physics**
+    Utilizes GLM for all vector and matrix mathematics, following GLSL conventions.
 
-The application structure is designed to decouple resource management from the rendering loop, ensuring that heavy I/O operations do not block the frame execution where possible.
+* **Environment Tools**
+    Supports drag-and-drop for image textures (creating instant planes) and toggleable infinite/finite grid systems.
 
-### Initialization & Resource Loading
-Upon launch, the `Window` subsystem initializes the OpenGL context, followed by the `ModelManager` which pre-loads geometric primitives and shaders. The system utilizes a **Flyweight pattern** for mesh data; multiple instances of the same object in the scene share the same underlying vertex data (VBOs/VAOs) to minimize VRAM usage.
-
-### The Render Loop
-The execution flow within `main.cpp` orchestrates distinct passes for every frame:
-
-1.  **Shadow Pass**: The scene is rendered from the light's perspective into a high-resolution depth map. This pass uses a simplified shader (`DirShadowDepth`) that strips out fragment calculations to maximize performance.
-2.  **Logic & Input**: The `SceneManager` updates object transformations based on user input or active Gizmo operations.
-3.  **Picking Pass (On-Demand)**: When interaction occurs, a specific render pass draws the scene using unique color IDs to an off-screen buffer. The pixel under the mouse cursor is read back to identify the specific `SceneObject` selected.
-4.  **Main Render Pass**: The scene is rendered to the backbuffer. Shaders consume the shadow map generated in step 1 to calculate lighting, applying PCF (Percentage-Closer Filtering) for soft shadow edges.
-5.  **UI Overlay**: Finally, ImGui renders the interface hierarchy on top of the 3D scene before the buffer swap.
-
-## 🚀 Build & Installation
+## Build & Installation
 
 Prerequisites: **Visual Studio 2022** (or a C++20 compatible compiler), **CMake**, and **Git**.
 
-1.  **Clone the Repository**:
-    ```bash
-    git clone https://github.com/your-username/BallOfWool.git
-    cd BallOfWool
-    ```
+### 1. Clone the repository
 
-2.  **Configure with CMake**:
-    The project relies on `vcpkg.json` to automatically download and build dependencies.
-    ```bash
-    # Generate build files (Visual Studio will detect the vcpkg toolchain automatically)
-    cmake -B out/build -S . -DCMAKE_TOOLCHAIN_FILE=[path/to/vcpkg]/scripts/buildsystems/vcpkg.cmake
-    ```
+```bash
+git clone [https://github.com/ilmartotch/3DModelVisualizer.git](https://github.com/ilmartotch/3DModelVisualizer.git)
+cd 3DModelVisualizer
+```
 
-3.  **Build**:
-    Compile the project. This will also handle the post-build events that copy assets and shaders to the executable directory.
-    ```bash
-    cmake --build out/build --config Release
-    ```
+### 2. Configure vcpkg toolchain
+The CMakeLists.txt file is currently configured to look for the vcpkg toolchain specifically inside the project directory. Choose one of the following options:
 
-## 💬 Community & Feedback
+**Option A: Local vcpkg**
 
-The project is evolving, and feedback is highly appreciated. The **GitHub Issues** section is open and actively monitored for:
-*   Bug reports and reproduction steps.
-*   Feature requests for future iterations.
-*   Suggestions regarding the architectural refactor or graphics optimization.
+  Clone vcpkg directly inside the project root so the path matches the CMake configuration.
+  ```bash
+  git clone [https://github.com/microsoft/vcpkg.git](https://github.com/microsoft/vcpkg.git)
+.\vcpkg\bootstrap-vcpkg.bat
+  ```
 
-Feel free to open a discussion or a pull request if you wish to contribute to the codebase.
+
+**Option B: Global vcpkg**
+
+  If you already have vcpkg installed elsewhere on your system, you must edit CMakeLists.txt at Line 2.
+  Change this line:
+  ```Cmake
+  set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
+  ```
+
+To your actual path, for example:
+  ```Cmake
+  set(CMAKE_TOOLCHAIN_FILE "C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake")
+ ```
+
+### 3. Build the project
+
+Once the toolchain path is correct, generate the build files and compile. CMake will automatically handle the dependencies defined in vcpkg.json.
+  ```bash
+  # Generate build files
+  cmake -B out -S .
+
+  # Compile
+  cmake --build out --config Release
+  ```
+
+The build process includes post-build commands that automatically copy shaders and necessary assets to the executable directory to ensure the application runs correctly.
+
+### Feedback
+The project is evolving, and feedback regarding the architectural refactor, graphics optimization, or the shadow implementation is highly appreciated. Feel free to open an Issue or a Pull Request for suggestions and bug reports.

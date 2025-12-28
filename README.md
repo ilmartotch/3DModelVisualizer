@@ -1,5 +1,11 @@
 # 3D Model Visualizer
 
+https://github.com/user-attachments/assets/6c258177-04b9-42ed-a901-da15a3ff18db
+
+![Cattura](https://github.com/user-attachments/assets/fa6c37d9-c6c3-4cd2-83d3-7d40cc79a2bb)
+![Cattura1](https://github.com/user-attachments/assets/8c6397b6-9941-4111-8030-d05903934934)
+
+
 3D Model Visualizer is a real-time 3D visualization engine built with C++20 and Modern OpenGL (4.5). Designed as a sandbox environment, it allows for the loading, inspection, 
 and manipulation of 3D assets with a focus on lighting control and rendering pipeline understanding. This project serves as a portfolio piece to demonstrate low-level graphics programming skills. 
 While features like the picking system and shadow mapping are fully functional, the codebase is currently undergoing a refactor to transition from the current monolithic structure towards a more modular architecture.

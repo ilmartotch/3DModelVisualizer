@@ -1795,6 +1795,8 @@ int main() {
         return -1;
     }
 
+    glfwSwapInterval(0);
+
     GLFWimage icon;
     int iconWidth, iconHeight, iconChannels;
     unsigned char* iconData = stbi_load("Assets/Images/logo.png", &iconWidth, &iconHeight, &iconChannels, 4);

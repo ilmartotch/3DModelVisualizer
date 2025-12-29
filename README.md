@@ -40,43 +40,19 @@ The engine is built upon a strictly typed C++ codebase using vcpkg for dependenc
 Prerequisites: **Visual Studio 2022** (or a C++20 compatible compiler), **CMake**, and **Git**.
 
 ### 1. Clone the repository
+Per scaricare il progetto insieme a tutte le dipendenze del sottomodulo vcpkg, utilizza il comando `--recursive`
 
 ```bash
-git clone [https://github.com/ilmartotch/3DModelVisualizer.git](https://github.com/ilmartotch/3DModelVisualizer.git)
+git clone --recursive [https://github.com/ilmartotch/3DModelVisualizer.git](https://github.com/ilmartotch/3DModelVisualizer.git)
 cd 3DModelVisualizer
 ```
 
-### 2. Configure vcpkg toolchain
-The CMakeLists.txt file is currently configured to look for the vcpkg toolchain specifically inside the project directory. Choose one of the following options:
-
-**Option A: Local vcpkg**
-
-  Clone vcpkg directly inside the project root so the path matches the CMake configuration.
-  ```bash
-  git clone [https://github.com/microsoft/vcpkg.git](https://github.com/microsoft/vcpkg.git)
-.\vcpkg\bootstrap-vcpkg.bat
-  ```
-
-
-**Option B: Global vcpkg**
-
-  If you already have vcpkg installed elsewhere on your system, you must edit CMakeLists.txt at Line 2.
-  Change this line:
-  ```Cmake
-  set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
-  ```
-
-To your actual path, for example:
-  ```Cmake
-  set(CMAKE_TOOLCHAIN_FILE "C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake")
- ```
-
-### 3. Build the project
+### 2. Build the project
 
 Once the toolchain path is correct, generate the build files and compile. CMake will automatically handle the dependencies defined in vcpkg.json.
   ```bash
   # Generate build files
-  cmake -B out -S .
+  cmake -B out .
 
   # Compile
   cmake --build out --config Release
